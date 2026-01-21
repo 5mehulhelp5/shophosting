@@ -846,7 +846,7 @@ def manage_customers():
 @admin_bp.route('/manage-customers/create', methods=['GET', 'POST'])
 @admin_required
 def create_customer():
-    """Create a new customer"""
+    """Create a new customer and queue provisioning"""
     admin = get_current_admin()
 
     if request.method == 'POST':
@@ -855,6 +855,7 @@ def create_customer():
         company_name = request.form.get('company_name', '').strip()
         domain = request.form.get('domain', '').strip().lower()
         platform = request.form.get('platform', 'woocommerce')
+        start_provisioning = request.form.get('start_provisioning') == 'on'
 
         # Validation
         if not all([email, password, company_name, domain]):
@@ -871,20 +872,74 @@ def create_customer():
             return render_template('admin/customer_form.html', admin=admin, customer=None)
 
         try:
-            # Create customer
-            customer = Customer(
-                email=email,
-                company_name=company_name,
-                domain=domain,
-                platform=platform,
-                status='pending'
-            )
-            customer.set_password(password)
-            customer.save()
+            # Assign a port
+            web_port = PortManager.get_next_available_port()
+            if not web_port:
+                flash('No available ports. Maximum capacity reached.', 'error')
+                return render_template('admin/customer_form.html', admin=admin, customer=None)
 
-            log_admin_action(admin.id, 'create_customer', 'customer', customer.id,
+            # Create customer with port
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            from werkzeug.security import generate_password_hash
+            password_hash = generate_password_hash(password)
+
+            cursor.execute("""
+                INSERT INTO customers (email, password_hash, company_name, domain, platform, status, web_port)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (email, password_hash, company_name, domain, platform,
+                  'provisioning' if start_provisioning else 'pending', web_port))
+
+            customer_id = cursor.lastrowid
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            # Queue provisioning if requested
+            if start_provisioning:
+                try:
+                    import sys
+                    sys.path.insert(0, '/opt/shophosting/provisioning')
+                    from enqueue_provisioning import ProvisioningQueue
+
+                    queue = ProvisioningQueue(
+                        redis_host=os.getenv('REDIS_HOST', 'localhost'),
+                        redis_port=int(os.getenv('REDIS_PORT', 6379))
+                    )
+
+                    customer_data = {
+                        'customer_id': customer_id,
+                        'domain': domain,
+                        'platform': platform,
+                        'email': email,
+                        'web_port': web_port,
+                        'site_title': company_name,
+                        'memory_limit': os.getenv('DEFAULT_MEMORY_LIMIT', '1g'),
+                        'cpu_limit': os.getenv('DEFAULT_CPU_LIMIT', '1.0')
+                    }
+
+                    job = queue.enqueue_customer(customer_data)
+
+                    # Record the job
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        INSERT INTO provisioning_jobs (customer_id, job_id, status)
+                        VALUES (%s, %s, 'queued')
+                    """, (customer_id, job.id))
+                    conn.commit()
+                    cursor.close()
+                    conn.close()
+
+                    flash(f'Customer {email} created and provisioning started.', 'success')
+                except Exception as e:
+                    flash(f'Customer created but provisioning failed to start: {str(e)}', 'warning')
+            else:
+                flash(f'Customer {email} created successfully (not provisioned).', 'success')
+
+            log_admin_action(admin.id, 'create_customer', 'customer', customer_id,
                            f'Created customer {email}', request.remote_addr)
-            flash(f'Customer {email} created successfully.', 'success')
             return redirect(url_for('admin.manage_customers'))
         except Exception as e:
             flash(f'Error creating customer: {str(e)}', 'error')
@@ -959,7 +1014,7 @@ def edit_customer(customer_id):
 @admin_bp.route('/manage-customers/<int:customer_id>/delete', methods=['POST'])
 @admin_required
 def delete_customer(customer_id):
-    """Delete a customer"""
+    """Delete a customer and their containers/configs"""
     admin = get_current_admin()
     customer = Customer.get_by_id(customer_id)
 
@@ -968,18 +1023,45 @@ def delete_customer(customer_id):
         return redirect(url_for('admin.manage_customers'))
 
     email = customer.email
+    customer_path = f"/var/customers/customer-{customer_id}"
 
     try:
+        # Stop and remove containers
+        if os.path.exists(customer_path):
+            subprocess.run(
+                ['docker', 'compose', 'down', '-v'],
+                cwd=customer_path,
+                capture_output=True,
+                timeout=60
+            )
+            # Remove customer directory
+            import shutil
+            shutil.rmtree(customer_path)
+
+        # Remove Nginx config
+        nginx_available = f"/etc/nginx/sites-available/customer-{customer_id}.conf"
+        nginx_enabled = f"/etc/nginx/sites-enabled/customer-{customer_id}.conf"
+
+        if os.path.exists(nginx_enabled):
+            os.unlink(nginx_enabled)
+        if os.path.exists(nginx_available):
+            os.unlink(nginx_available)
+
+        # Reload nginx
+        subprocess.run(['sudo', 'systemctl', 'reload', 'nginx'], capture_output=True)
+
+        # Delete from database
         conn = get_db_connection()
         cursor = conn.cursor()
+        cursor.execute("DELETE FROM provisioning_jobs WHERE customer_id = %s", (customer_id,))
         cursor.execute("DELETE FROM customers WHERE id = %s", (customer_id,))
         conn.commit()
         cursor.close()
         conn.close()
 
         log_admin_action(admin.id, 'delete_customer', 'customer', customer_id,
-                        f'Deleted customer {email}', request.remote_addr)
-        flash(f'Customer {email} deleted successfully.', 'success')
+                        f'Deleted customer {email} and removed containers', request.remote_addr)
+        flash(f'Customer {email} and all associated resources deleted successfully.', 'success')
     except Exception as e:
         flash(f'Error deleting customer: {str(e)}', 'error')
 

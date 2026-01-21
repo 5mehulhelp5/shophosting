@@ -51,6 +51,18 @@
                     </select>
                 </div>
 
+                {% if not customer %}
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" name="start_provisioning" checked style="width: 18px; height: 18px;">
+                        <span>Start provisioning immediately</span>
+                    </label>
+                    <p class="text-muted" style="font-size: 0.85rem; margin-top: 6px;">
+                        If checked, the customer's containers will be created automatically.
+                    </p>
+                </div>
+                {% endif %}
+
                 {% if customer %}
                 <div class="form-group">
                     <label for="status">Status</label>
