@@ -7,6 +7,7 @@ A multi-tenant Docker hosting platform that automatically provisions containeriz
 - **Automated Provisioning**: Customers sign up and receive a fully configured online store within minutes
 - **Multi-Platform Support**: WooCommerce (WordPress) and Magento 2 with Varnish caching
 - **Self-Service Dashboard**: Customers can view store status, credentials, and manage their stores
+- **Admin Panel**: Full-featured admin interface for system monitoring and customer management
 - **Background Job Processing**: Redis-backed queue system for reliable provisioning
 - **SSL/TLS Support**: Automatic certificate management with Let's Encrypt
 - **Resource Isolation**: Each customer gets isolated Docker containers with configurable resource limits
@@ -179,6 +180,51 @@ cd /var/customers/customer-{id}
 docker compose down
 ```
 
+## Admin Panel
+
+ShopHosting.io includes a comprehensive admin panel for system monitoring and customer management.
+
+### Setup
+
+1. **Run the migration:**
+   ```bash
+   mysql -u root -p shophosting_db < /opt/shophosting/migrations/002_add_admin_users.sql
+   ```
+
+2. **Create your first admin user:**
+   ```bash
+   cd /opt/shophosting
+   source webapp/venv/bin/activate
+   python3 scripts/create_admin.py admin@example.com YourSecurePassword "Admin Name" super_admin
+   ```
+
+3. **Access the admin panel:**
+   Navigate to `https://yourdomain.com/admin/login`
+
+### Features
+
+- **Dashboard**: Overview of customer stats, port usage, queue status, and quick action buttons
+- **Customer Management**: Create, edit, delete customers with automatic provisioning
+- **Provisioning Monitoring**: View queue status, failed jobs, and retry provisioning
+- **System Health**: Service status, disk usage, backup status, port allocation
+- **Billing Overview**: MRR, subscription stats, recent invoices
+- **Log Viewer**: View webapp and worker logs directly from the admin panel
+
+### Quick Actions
+
+The dashboard includes quick action buttons for:
+- Restart webapp/worker services
+- Run manual backup
+- Clear failed provisioning jobs
+- View logs
+- External links to Portainer and Stripe Dashboard
+
+### Admin Roles
+
+- `super_admin`: Full access to all features
+- `admin`: Standard admin access
+- `support`: Limited access for support staff
+
 ## Backup System
 
 ShopHosting.io includes an automated backup system using [restic](https://restic.net/) that backs up all customer data to a remote server daily.
@@ -306,7 +352,13 @@ Edit `/opt/shophosting/scripts/backup.sh` to customize:
 ├── webapp/                 # Flask web application
 │   ├── app.py              # Main routes and application
 │   ├── models.py           # Database models
+│   ├── admin/              # Admin panel blueprint
+│   │   ├── __init__.py
+│   │   ├── routes.py       # Admin routes
+│   │   ├── models.py       # Admin user model
+│   │   └── api.py          # Admin API endpoints
 │   └── templates/          # Jinja2 HTML templates
+│       └── admin/          # Admin panel templates
 ├── provisioning/           # Background worker
 │   └── provisioning_worker.py
 ├── templates/              # Docker Compose templates
@@ -317,6 +369,7 @@ Edit `/opt/shophosting/scripts/backup.sh` to customize:
 ├── scripts/                # Utility scripts
 │   ├── backup.sh           # Daily backup script
 │   ├── restore.sh          # Restore tool
+│   ├── create_admin.py     # Create admin users
 │   └── setup_stripe_products.py
 ├── logs/                   # Application logs
 ├── schema.sql              # Database schema

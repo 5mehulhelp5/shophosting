@@ -1,0 +1,265 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}Customer: {{ customer.email }}{% endblock %}
+{% block page_title %}Customer Details{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <a href="{{ url_for('admin.customers') }}" class="btn btn-secondary btn-sm">Back to Customers</a>
+    <div style="display: flex; gap: 12px;">
+        <a href="{{ url_for('admin.edit_customer', customer_id=customer.id) }}" class="btn btn-secondary btn-sm">Edit Customer</a>
+        {% if customer.status == 'suspended' %}
+            <form method="POST" action="{{ url_for('admin.customer_reactivate', customer_id=customer.id) }}" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-primary btn-sm">Reactivate</button>
+            </form>
+        {% elif customer.status == 'active' %}
+            <form method="POST" action="{{ url_for('admin.customer_suspend', customer_id=customer.id) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to suspend this customer?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-danger btn-sm">Suspend</button>
+            </form>
+        {% endif %}
+        <form method="POST" action="{{ url_for('admin.delete_customer', customer_id=customer.id) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this customer? This will remove all containers and data. This cannot be undone.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-danger btn-sm">Delete Customer</button>
+        </form>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+    <!-- Customer Info -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Customer Information</h3>
+            <span class="badge badge-{{ customer.status }}">{{ customer.status }}</span>
+        </div>
+        <div class="card-body">
+            <table style="width: 100%;">
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0; width: 140px;">ID</td>
+                    <td class="mono">{{ customer.id }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Email</td>
+                    <td>{{ customer.email }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Company</td>
+                    <td>{{ customer.company_name }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Domain</td>
+                    <td class="mono">
+                        <a href="https://{{ customer.domain }}" target="_blank" style="color: var(--accent-blue);">{{ customer.domain }}</a>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Platform</td>
+                    <td><span class="badge badge-info">{{ customer.platform }}</span></td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Port</td>
+                    <td class="mono">{{ customer.web_port or 'Not assigned' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Created</td>
+                    <td>{{ customer.created_at.strftime('%Y-%m-%d %H:%M') if customer.created_at else '-' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Updated</td>
+                    <td>{{ customer.updated_at.strftime('%Y-%m-%d %H:%M') if customer.updated_at else '-' }}</td>
+                </tr>
+            </table>
+
+            {% if customer.error_message %}
+            <div style="margin-top: 20px; padding: 16px; background: var(--error-muted); border-radius: var(--radius-md); border: 1px solid rgba(239, 68, 68, 0.2);">
+                <strong class="text-error">Error:</strong>
+                <p class="text-error" style="margin-top: 8px;">{{ customer.error_message }}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Store Credentials -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Store Credentials</h3>
+        </div>
+        <div class="card-body">
+            {% if customer.status == 'active' %}
+            <table style="width: 100%;">
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0; width: 140px;">Store URL</td>
+                    <td>
+                        <a href="https://{{ customer.domain }}" target="_blank" class="mono" style="color: var(--accent-blue);">https://{{ customer.domain }}</a>
+                    </td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Admin URL</td>
+                    <td>
+                        {% if customer.platform == 'woocommerce' %}
+                            <a href="https://{{ customer.domain }}/wp-admin" target="_blank" class="mono" style="color: var(--accent-blue);">https://{{ customer.domain }}/wp-admin</a>
+                        {% else %}
+                            <a href="https://{{ customer.domain }}/admin" target="_blank" class="mono" style="color: var(--accent-blue);">https://{{ customer.domain }}/admin</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Admin User</td>
+                    <td class="mono">{{ customer.admin_user or 'N/A' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Admin Password</td>
+                    <td class="mono">{{ customer.admin_password or 'N/A' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">DB Name</td>
+                    <td class="mono">{{ customer.db_name or 'N/A' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">DB User</td>
+                    <td class="mono">{{ customer.db_user or 'N/A' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">DB Password</td>
+                    <td class="mono">{{ customer.db_password or 'N/A' }}</td>
+                </tr>
+            </table>
+            {% else %}
+            <p class="text-muted">Credentials will be available once the store is active.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Subscription -->
+{% if subscription %}
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Subscription</h3>
+        <span class="badge badge-{{ subscription.status }}">{{ subscription.status }}</span>
+    </div>
+    <div class="card-body">
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px;">
+            <div>
+                <div class="text-muted" style="font-size: 0.85rem; margin-bottom: 4px;">Plan</div>
+                <div>{{ subscription.plan_name or 'Unknown' }}</div>
+            </div>
+            <div>
+                <div class="text-muted" style="font-size: 0.85rem; margin-bottom: 4px;">Period Start</div>
+                <div>{{ subscription.current_period_start.strftime('%Y-%m-%d') if subscription.current_period_start else '-' }}</div>
+            </div>
+            <div>
+                <div class="text-muted" style="font-size: 0.85rem; margin-bottom: 4px;">Period End</div>
+                <div>{{ subscription.current_period_end.strftime('%Y-%m-%d') if subscription.current_period_end else '-' }}</div>
+            </div>
+            <div>
+                <div class="text-muted" style="font-size: 0.85rem; margin-bottom: 4px;">Stripe ID</div>
+                <div class="mono">{{ subscription.stripe_subscription_id or '-' }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Provisioning Jobs -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Provisioning History</h3>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Job ID</th>
+                    <th>Status</th>
+                    <th>Started</th>
+                    <th>Finished</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                <tr>
+                    <td class="mono">{{ job.job_id[:12] }}...</td>
+                    <td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td>
+                    <td>{{ job.started_at.strftime('%Y-%m-%d %H:%M') if job.started_at else '-' }}</td>
+                    <td>{{ job.finished_at.strftime('%Y-%m-%d %H:%M') if job.finished_at else '-' }}</td>
+                    <td class="text-error" style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        {{ job.error_message or '-' }}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-muted">No provisioning jobs</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Invoices -->
+{% if invoices %}
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Invoices</h3>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Invoice ID</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Paid</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for invoice in invoices %}
+                <tr>
+                    <td class="mono">{{ invoice.stripe_invoice_id[:20] }}...</td>
+                    <td>${{ "%.2f"|format(invoice.amount_due / 100) }}</td>
+                    <td><span class="badge badge-{{ 'success' if invoice.status == 'paid' else 'warning' }}">{{ invoice.status }}</span></td>
+                    <td>{{ invoice.created_at.strftime('%Y-%m-%d') if invoice.created_at else '-' }}</td>
+                    <td>{{ invoice.paid_at.strftime('%Y-%m-%d') if invoice.paid_at else '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Audit Log -->
+{% if audit_logs %}
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Activity Log</h3>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Action</th>
+                    <th>Details</th>
+                    <th>IP Address</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in audit_logs %}
+                <tr>
+                    <td>{{ log.action }}</td>
+                    <td class="text-muted" style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ log.details or '-' }}</td>
+                    <td class="mono">{{ log.ip_address or '-' }}</td>
+                    <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

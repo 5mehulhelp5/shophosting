@@ -1,0 +1,158 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}System Health{% endblock %}
+{% block page_title %}System Health{% endblock %}
+
+{% block content %}
+<!-- Service Status -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Service Status</h3>
+    </div>
+    <div class="card-body">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+            {% for service, is_active in services.items() %}
+            <div style="display: flex; align-items: center; gap: 12px; padding: 16px; background: var(--bg-surface); border-radius: var(--radius-md);">
+                <div class="status-dot {{ 'online' if is_active else 'offline' }}"></div>
+                <div>
+                    <div style="font-weight: 500;">{{ service }}</div>
+                    <div class="text-muted" style="font-size: 0.85rem;">{{ 'Running' if is_active else 'Stopped' }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- Port Utilization -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Port Utilization</h3>
+        <span class="text-muted">{{ port_usage.used }} / {{ port_usage.total }} ports used</span>
+    </div>
+    <div class="card-body">
+        <div class="progress" style="height: 24px; margin-bottom: 16px;">
+            <div class="progress-bar" style="width: {{ (port_usage.used / port_usage.total * 100)|round }}%"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+            <span class="text-muted">Available: <strong class="text-success">{{ port_usage.available }}</strong></span>
+            <span class="text-muted">Used: <strong>{{ port_usage.used }}</strong></span>
+            <span class="text-muted">Range: <strong class="mono">8001-8100</strong></span>
+        </div>
+
+        {% if port_usage.used_ports %}
+        <details style="margin-top: 20px;">
+            <summary style="cursor: pointer; color: var(--text-secondary); font-size: 0.9rem;">View allocated ports</summary>
+            <div style="margin-top: 12px; padding: 16px; background: var(--bg-surface); border-radius: var(--radius-md); font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; max-height: 200px; overflow-y: auto;">
+                {{ port_usage.used_ports|join(', ') }}
+            </div>
+        </details>
+        {% endif %}
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+    <!-- Disk Usage -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Disk Usage</h3>
+            <span class="badge {% if disk_usage.percent and disk_usage.percent|replace('%', '')|int > 80 %}badge-error{% elif disk_usage.percent and disk_usage.percent|replace('%', '')|int > 60 %}badge-warning{% else %}badge-success{% endif %}">{{ disk_usage.percent }}</span>
+        </div>
+        <div class="card-body">
+            <table style="width: 100%;">
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Total</td>
+                    <td style="text-align: right;">{{ disk_usage.total }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Used</td>
+                    <td style="text-align: right;">{{ disk_usage.used }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Available</td>
+                    <td style="text-align: right; color: var(--success);">{{ disk_usage.available }}</td>
+                </tr>
+            </table>
+            <div class="progress mt-4">
+                <div class="progress-bar" style="width: {{ disk_usage.percent|default('0%') }}; {% if disk_usage.percent and disk_usage.percent|replace('%', '')|int > 80 %}background: var(--error);{% elif disk_usage.percent and disk_usage.percent|replace('%', '')|int > 60 %}background: var(--warning);{% endif %}"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup Status -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Backup Status</h3>
+            <span class="badge badge-{{ 'success' if backup_status.last_status == 'success' else 'error' }}">{{ backup_status.last_status }}</span>
+        </div>
+        <div class="card-body">
+            <table style="width: 100%;">
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Last Run</td>
+                    <td style="text-align: right;">{{ backup_status.last_run or 'Unknown' }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Status</td>
+                    <td style="text-align: right;">
+                        {% if backup_status.last_status == 'success' %}
+                            <span class="text-success">Successful</span>
+                        {% elif backup_status.last_status == 'failed' %}
+                            <span class="text-error">Failed</span>
+                        {% else %}
+                            <span class="text-muted">Unknown</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td class="text-muted" style="padding: 8px 0;">Snapshots</td>
+                    <td style="text-align: right;">{{ backup_status.snapshots }}</td>
+                </tr>
+            </table>
+            <p class="text-muted mt-4" style="font-size: 0.85rem;">
+                Backups run daily at 02:00 UTC via restic.
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- System Commands -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Quick Commands</h3>
+    </div>
+    <div class="card-body">
+        <p class="text-muted mb-4">Common commands for system management (run via SSH):</p>
+        <div style="display: grid; gap: 12px;">
+            <div style="padding: 12px 16px; background: var(--bg-surface); border-radius: var(--radius-sm); font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+                <span class="text-muted"># Restart webapp</span><br>
+                sudo systemctl restart shophosting-webapp
+            </div>
+            <div style="padding: 12px 16px; background: var(--bg-surface); border-radius: var(--radius-sm); font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+                <span class="text-muted"># Restart provisioning worker</span><br>
+                sudo systemctl restart provisioning-worker
+            </div>
+            <div style="padding: 12px 16px; background: var(--bg-surface); border-radius: var(--radius-sm); font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+                <span class="text-muted"># View webapp logs</span><br>
+                tail -f /opt/shophosting/logs/webapp.log
+            </div>
+            <div style="padding: 12px 16px; background: var(--bg-surface); border-radius: var(--radius-sm); font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+                <span class="text-muted"># View worker logs</span><br>
+                tail -f /opt/shophosting/logs/provisioning_worker.log
+            </div>
+            <div style="padding: 12px 16px; background: var(--bg-surface); border-radius: var(--radius-sm); font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+                <span class="text-muted"># Run backup manually</span><br>
+                sudo /opt/shophosting/scripts/backup.sh
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-refresh every 60 seconds
+setTimeout(function() {
+    location.reload();
+}, 60000);
+</script>
+{% endblock %}
