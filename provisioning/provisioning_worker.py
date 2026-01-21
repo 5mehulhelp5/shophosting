@@ -387,17 +387,38 @@ class ProvisioningWorker:
 """
         
         try:
-            # Write config file
-            with open(config_file, 'w') as f:
+            import tempfile
+
+            # Write config to temp file first, then use sudo to move it
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.conf', delete=False) as f:
                 f.write(nginx_config)
-            
-            # Create symbolic link to enable the site
+                temp_file = f.name
+
+            # Use sudo to copy config to sites-available
+            result = subprocess.run(
+                ['sudo', 'cp', temp_file, str(config_file)],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode != 0:
+                raise ProvisioningError(f"Failed to copy nginx config: {result.stderr}")
+
+            # Clean up temp file
+            os.unlink(temp_file)
+
+            # Use sudo to create symbolic link to enable the site
             if not enabled_link.exists():
-                enabled_link.symlink_to(config_file)
-            
+                result = subprocess.run(
+                    ['sudo', 'ln', '-s', str(config_file), str(enabled_link)],
+                    capture_output=True,
+                    text=True
+                )
+                if result.returncode != 0:
+                    raise ProvisioningError(f"Failed to enable nginx site: {result.stderr}")
+
             # Test nginx configuration
             test_result = subprocess.run(
-                ['nginx', '-t'],
+                ['sudo', 'nginx', '-t'],
                 capture_output=True,
                 text=True
             )
@@ -407,7 +428,7 @@ class ProvisioningWorker:
 
             # Reload nginx
             subprocess.run(
-                ['systemctl', 'reload', 'nginx'],
+                ['sudo', 'systemctl', 'reload', 'nginx'],
                 check=True
             )
 
