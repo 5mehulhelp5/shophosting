@@ -10,6 +10,7 @@ A multi-tenant Docker hosting platform that automatically provisions containeriz
 - **Background Job Processing**: Redis-backed queue system for reliable provisioning
 - **SSL/TLS Support**: Automatic certificate management with Let's Encrypt
 - **Resource Isolation**: Each customer gets isolated Docker containers with configurable resource limits
+- **Automated Backups**: Daily encrypted backups to remote server using restic with 30-day retention
 
 ## Requirements
 
@@ -178,6 +179,93 @@ cd /var/customers/customer-{id}
 docker compose down
 ```
 
+## Backup System
+
+ShopHosting.io includes an automated backup system using [restic](https://restic.net/) that backs up all customer data to a remote server daily.
+
+### What Gets Backed Up
+
+- `/var/customers/` - All customer sites (MySQL data, WordPress/Magento files, Redis, configs)
+- `shophosting_db` - Master database (customer metadata, credentials, billing)
+- `/etc/nginx/sites-available/` - Customer reverse proxy configurations
+- `/etc/letsencrypt/` - SSL certificates
+- `/opt/shophosting/.env` - Application configuration
+
+### Setup
+
+1. **Install restic:**
+   ```bash
+   sudo apt install restic
+   ```
+
+2. **Set up SSH key authentication to backup server:**
+   ```bash
+   ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -C "shophosting-backup"
+   # Copy public key to backup server's authorized_keys
+   ```
+
+3. **Create restic password file:**
+   ```bash
+   openssl rand -base64 32 > /root/.restic-password
+   chmod 600 /root/.restic-password
+   ```
+
+4. **Initialize restic repository:**
+   ```bash
+   restic -r sftp:user@backup-server:/path/to/backups --password-file /root/.restic-password init
+   ```
+
+5. **Install systemd timer:**
+   ```bash
+   sudo cp /opt/shophosting/shophosting-backup.service /etc/systemd/system/
+   sudo cp /opt/shophosting/shophosting-backup.timer /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now shophosting-backup.timer
+   ```
+
+### Managing Backups
+
+```bash
+# Run manual backup
+/opt/shophosting/scripts/backup.sh
+
+# List available snapshots
+/opt/shophosting/scripts/restore.sh list
+
+# Show snapshot contents
+/opt/shophosting/scripts/restore.sh show latest
+
+# Check backup timer status
+systemctl status shophosting-backup.timer
+
+# View backup logs
+journalctl -u shophosting-backup.service
+```
+
+### Restoring Data
+
+```bash
+# Restore a specific customer
+/opt/shophosting/scripts/restore.sh restore-customer 12 latest
+
+# Restore a specific file or directory
+/opt/shophosting/scripts/restore.sh restore-file /var/customers/customer-12/wordpress latest
+
+# Restore a database from SQL dump
+/opt/shophosting/scripts/restore.sh restore-db shophosting_db latest
+
+# Full disaster recovery (use with caution)
+/opt/shophosting/scripts/restore.sh restore-all latest
+```
+
+### Configuration
+
+Edit `/opt/shophosting/scripts/backup.sh` to customize:
+- `RESTIC_REPOSITORY` - Backup destination (sftp://user@host:/path)
+- `RETENTION_DAYS` - Number of daily snapshots to keep (default: 30)
+
+**Important:** Keep `/root/.restic-password` safe - without it, backups cannot be restored.
+
 ## Architecture
 
 ```
@@ -227,8 +315,13 @@ docker compose down
 ├── docker/                 # Custom Docker images
 ├── migrations/             # Database migrations
 ├── scripts/                # Utility scripts
+│   ├── backup.sh           # Daily backup script
+│   ├── restore.sh          # Restore tool
+│   └── setup_stripe_products.py
 ├── logs/                   # Application logs
 ├── schema.sql              # Database schema
+├── shophosting-backup.service   # Backup systemd service
+├── shophosting-backup.timer     # Backup systemd timer
 └── .env                    # Environment configuration
 ```
 
