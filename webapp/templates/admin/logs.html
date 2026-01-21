@@ -1,0 +1,70 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}{{ log_type|title }} Logs{% endblock %}
+{% block page_title %}{{ log_type|title }} Logs{% endblock %}
+
+{% block extra_css %}
+<style>
+    .log-container {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        padding: 16px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.8rem;
+        line-height: 1.5;
+        max-height: 70vh;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+    .log-line {
+        padding: 2px 0;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+    .log-line:hover {
+        background: var(--bg-hover);
+    }
+    .log-error {
+        color: var(--error);
+    }
+    .log-warning {
+        color: var(--warning);
+    }
+    .log-info {
+        color: var(--accent-blue);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-secondary btn-sm">Back to Dashboard</a>
+    <div style="display: flex; gap: 12px;">
+        <a href="{{ url_for('admin.view_logs', log_type='webapp') }}" class="btn {% if log_type == 'webapp' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Webapp</a>
+        <a href="{{ url_for('admin.view_logs', log_type='worker') }}" class="btn {% if log_type == 'worker' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Worker</a>
+        <a href="{{ url_for('admin.view_logs', log_type='backup') }}" class="btn {% if log_type == 'backup' %}btn-primary{% else %}btn-secondary{% endif %} btn-sm">Backup</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Last 200 lines</h3>
+        <button onclick="location.reload()" class="btn btn-secondary btn-sm">Refresh</button>
+    </div>
+    <div class="log-container">
+        {% for line in lines %}
+        <div class="log-line {% if 'ERROR' in line or 'error' in line %}log-error{% elif 'WARNING' in line or 'warning' in line %}log-warning{% elif 'INFO' in line %}log-info{% endif %}">{{ line }}</div>
+        {% else %}
+        <div class="text-muted">No log entries found.</div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Scroll to bottom of logs
+document.querySelector('.log-container').scrollTop = document.querySelector('.log-container').scrollHeight;
+</script>
+{% endblock %}

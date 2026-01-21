@@ -1,0 +1,98 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}Customers{% endblock %}
+{% block page_title %}Customers{% endblock %}
+
+{% block content %}
+<!-- Filters -->
+<form method="GET" class="filters">
+    <input type="text" name="search" class="form-control" placeholder="Search email, domain, company..." value="{{ search }}">
+    <select name="status" class="form-control">
+        <option value="">All Statuses</option>
+        <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+        <option value="provisioning" {% if status_filter == 'provisioning' %}selected{% endif %}>Provisioning</option>
+        <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+        <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Failed</option>
+        <option value="suspended" {% if status_filter == 'suspended' %}selected{% endif %}>Suspended</option>
+    </select>
+    <select name="platform" class="form-control">
+        <option value="">All Platforms</option>
+        <option value="woocommerce" {% if platform_filter == 'woocommerce' %}selected{% endif %}>WooCommerce</option>
+        <option value="magento" {% if platform_filter == 'magento' %}selected{% endif %}>Magento</option>
+    </select>
+    <button type="submit" class="btn btn-secondary">Filter</button>
+    {% if search or status_filter or platform_filter %}
+        <a href="{{ url_for('admin.customers') }}" class="btn btn-secondary">Clear</a>
+    {% endif %}
+</form>
+
+<!-- Results count -->
+<p class="text-muted mb-4">Showing {{ customers|length }} of {{ total }} customers</p>
+
+<!-- Customer Table -->
+<div class="card">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Email</th>
+                    <th>Company</th>
+                    <th>Domain</th>
+                    <th>Platform</th>
+                    <th>Port</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for customer in customers %}
+                <tr>
+                    <td class="mono">{{ customer.id }}</td>
+                    <td>{{ customer.email }}</td>
+                    <td>{{ customer.company_name }}</td>
+                    <td class="mono">{{ customer.domain }}</td>
+                    <td>
+                        <span class="badge badge-info">{{ customer.platform }}</span>
+                    </td>
+                    <td class="mono">{{ customer.web_port or '-' }}</td>
+                    <td><span class="badge badge-{{ customer.status }}">{{ customer.status }}</span></td>
+                    <td class="text-muted">{{ customer.created_at.strftime('%Y-%m-%d') if customer.created_at else '-' }}</td>
+                    <td>
+                        <a href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}" class="btn btn-secondary btn-sm">View</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" class="text-muted text-center">No customers found</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}
+        <a href="{{ url_for('admin.customers', page=page-1, search=search, status=status_filter, platform=platform_filter) }}">Previous</a>
+    {% endif %}
+
+    {% for p in range(1, total_pages + 1) %}
+        {% if p == page %}
+            <span class="active">{{ p }}</span>
+        {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+            <a href="{{ url_for('admin.customers', page=p, search=search, status=status_filter, platform=platform_filter) }}">{{ p }}</a>
+        {% elif p == page - 3 or p == page + 3 %}
+            <span>...</span>
+        {% endif %}
+    {% endfor %}
+
+    {% if page < total_pages %}
+        <a href="{{ url_for('admin.customers', page=page+1, search=search, status=status_filter, platform=platform_filter) }}">Next</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

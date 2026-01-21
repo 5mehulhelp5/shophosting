@@ -1,0 +1,139 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}Provisioning{% endblock %}
+{% block page_title %}Provisioning Queue{% endblock %}
+
+{% block content %}
+<!-- Queue Stats -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Queued</div>
+        <div class="stat-value warning">{{ queue_stats.queued }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Running</div>
+        <div class="stat-value info">{{ queue_stats.started }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Completed</div>
+        <div class="stat-value success">{{ queue_stats.finished }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Failed</div>
+        <div class="stat-value error">{{ queue_stats.failed }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Redis Status</div>
+        <div class="stat-value {% if queue_stats.connected %}success{% else %}error{% endif %}">
+            {{ 'Connected' if queue_stats.connected else 'Disconnected' }}
+        </div>
+    </div>
+</div>
+
+<!-- Failed Jobs -->
+{% if failed_jobs %}
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Failed Jobs</h3>
+        <span class="badge badge-error">{{ failed_jobs|length }} failed</span>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Job ID</th>
+                    <th>Customer</th>
+                    <th>Domain</th>
+                    <th>Error</th>
+                    <th>Failed At</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in failed_jobs %}
+                <tr>
+                    <td class="mono">{{ job.job_id[:12] }}...</td>
+                    <td>
+                        <a href="{{ url_for('admin.customer_detail', customer_id=job.customer_id) }}" style="color: var(--text-primary);">
+                            {{ job.email }}
+                        </a>
+                    </td>
+                    <td class="mono">{{ job.domain }}</td>
+                    <td class="text-error" style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{{ job.error_message }}">
+                        {{ job.error_message or 'Unknown error' }}
+                    </td>
+                    <td>{{ job.finished_at.strftime('%Y-%m-%d %H:%M') if job.finished_at else job.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('admin.job_retry', job_id=job.job_id) }}" style="display: inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-secondary btn-sm">Retry</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Recent Jobs -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Recent Jobs</h3>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Job ID</th>
+                    <th>Customer</th>
+                    <th>Domain</th>
+                    <th>Status</th>
+                    <th>Started</th>
+                    <th>Finished</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in recent_jobs %}
+                <tr>
+                    <td class="mono">{{ job.job_id[:12] }}...</td>
+                    <td>
+                        <a href="{{ url_for('admin.customer_detail', customer_id=job.customer_id) }}" style="color: var(--text-primary);">
+                            {{ job.email or 'Unknown' }}
+                        </a>
+                    </td>
+                    <td class="mono">{{ job.domain or '-' }}</td>
+                    <td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td>
+                    <td>{{ job.started_at.strftime('%H:%M:%S') if job.started_at else '-' }}</td>
+                    <td>{{ job.finished_at.strftime('%H:%M:%S') if job.finished_at else '-' }}</td>
+                    <td>
+                        {% if job.started_at and job.finished_at %}
+                            {{ ((job.finished_at - job.started_at).total_seconds() / 60)|round(1) }} min
+                        {% elif job.started_at %}
+                            Running...
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="text-muted text-center">No provisioning jobs</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-refresh every 10 seconds
+setTimeout(function() {
+    location.reload();
+}, 10000);
+</script>
+{% endblock %}

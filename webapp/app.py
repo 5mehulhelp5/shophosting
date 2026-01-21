@@ -57,6 +57,10 @@ init_db_pool()
 # Initialize Stripe
 init_stripe()
 
+# Register admin blueprint
+from admin import admin_bp
+app.register_blueprint(admin_bp, url_prefix='/admin')
+
 
 @login_manager.user_loader
 def load_user(user_id):

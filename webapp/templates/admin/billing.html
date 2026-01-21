@@ -1,0 +1,112 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}Billing{% endblock %}
+{% block page_title %}Billing Overview{% endblock %}
+
+{% block content %}
+<!-- Revenue Stats -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Monthly Recurring Revenue</div>
+        <div class="stat-value success">${{ "%.2f"|format(billing_stats.mrr) }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Active Subscriptions</div>
+        <div class="stat-value">{{ billing_stats.active_subscriptions }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Revenue This Month</div>
+        <div class="stat-value info">${{ "%.2f"|format(billing_stats.month_revenue) }}</div>
+    </div>
+</div>
+
+<!-- Subscription Breakdown -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Subscriptions by Plan</h3>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Plan</th>
+                    <th>Platform</th>
+                    <th>Active Subscribers</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for plan in subscription_breakdown %}
+                <tr>
+                    <td>{{ plan.name }}</td>
+                    <td><span class="badge badge-info">{{ plan.platform }}</span></td>
+                    <td>{{ plan.count }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="3" class="text-muted text-center">No plans configured</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Recent Invoices -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Recent Invoices</h3>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Customer</th>
+                    <th>Company</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Paid</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for invoice in recent_invoices %}
+                <tr>
+                    <td>
+                        {% if invoice.customer_id %}
+                        <a href="{{ url_for('admin.customer_detail', customer_id=invoice.customer_id) }}" style="color: var(--text-primary);">
+                            {{ invoice.email }}
+                        </a>
+                        {% else %}
+                        {{ invoice.email or 'Unknown' }}
+                        {% endif %}
+                    </td>
+                    <td>{{ invoice.company_name or '-' }}</td>
+                    <td class="mono">${{ "%.2f"|format((invoice.amount_due or 0) / 100) }}</td>
+                    <td>
+                        <span class="badge badge-{{ 'success' if invoice.status == 'paid' else ('warning' if invoice.status == 'open' else 'error') }}">
+                            {{ invoice.status }}
+                        </span>
+                    </td>
+                    <td>{{ invoice.created_at.strftime('%Y-%m-%d') if invoice.created_at else '-' }}</td>
+                    <td>{{ invoice.paid_at.strftime('%Y-%m-%d') if invoice.paid_at else '-' }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="text-muted text-center">No invoices yet</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Stripe Dashboard Link -->
+<div class="card">
+    <div class="card-body" style="text-align: center;">
+        <p class="text-muted mb-4">For detailed billing management, access the Stripe Dashboard:</p>
+        <a href="https://dashboard.stripe.com" target="_blank" class="btn btn-secondary">
+            Open Stripe Dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}
