@@ -1,0 +1,17 @@
+[Unit]
+Description=ShopHosting.io Daily Backup
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/shophosting/scripts/backup.sh
+StandardOutput=journal
+StandardError=journal
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
