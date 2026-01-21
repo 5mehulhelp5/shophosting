@@ -19,7 +19,7 @@ from wtforms.validators import DataRequired, Email, Length, EqualTo, ValidationE
 from dotenv import load_dotenv
 
 # Add provisioning module to path
-sys.path.insert(0, '/opt/shophosting.io/provisioning')
+sys.path.insert(0, '/opt/shophosting/provisioning')
 
 from models import Customer, PortManager, PricingPlan, Subscription, Invoice, init_db_pool
 from enqueue_provisioning import ProvisioningQueue
@@ -27,14 +27,14 @@ from stripe_integration import init_stripe, create_checkout_session, process_web
 from stripe_integration.checkout import get_checkout_session
 
 # Load environment variables
-load_dotenv('/opt/shophosting.io/.env')
+load_dotenv('/opt/shophosting/.env')
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/opt/shophosting.io/logs/webapp.log'),
+        logging.FileHandler('/opt/shophosting/logs/webapp.log'),
         logging.StreamHandler()
     ]
 )

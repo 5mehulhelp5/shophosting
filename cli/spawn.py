@@ -266,7 +266,7 @@ def spawn_container(store_info):
         print("    │  background. This may take several minutes.        │")
         print("    │                                                     │")
         print("    │  Monitor progress with:                            │")
-        print("    │  tail -f /opt/shophosting.io/logs/provisioning_worker.log│")
+        print("    │  tail -f /opt/shophosting/logs/provisioning_worker.log│")
         print("    │                                                     │")
         print("    └─────────────────────────────────────────────────────┘")
 

@@ -1,4 +1,4 @@
-# File: /opt/shophosting.io/provisioning/provisioning_worker.py
+# File: /opt/shophosting/provisioning/provisioning_worker.py
 """
 ShopHosting.io Provisioning Worker - Handles automated customer provisioning with Nginx
 """
@@ -28,7 +28,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/opt/shophosting.io/logs/provisioning_worker.log'),
+        logging.FileHandler('/opt/shophosting/logs/provisioning_worker.log'),
         logging.StreamHandler()
     ]
 )
@@ -148,7 +148,7 @@ class ProvisioningWorker:
                 varnish_dir.mkdir()
 
                 # Copy VCL template
-                vcl_template = Path('/opt/shophosting.io/templates/magento-varnish.vcl.j2')
+                vcl_template = Path('/opt/shophosting/templates/magento-varnish.vcl.j2')
                 if vcl_template.exists():
                     import shutil
                     shutil.copy(vcl_template, varnish_dir / "default.vcl")
@@ -170,9 +170,9 @@ class ProvisioningWorker:
         
         # Select appropriate template
         if config['platform'] == 'woocommerce':
-            template_file = '/opt/shophosting.io/templates/woocommerce-compose.yml.j2'
+            template_file = '/opt/shophosting/templates/woocommerce-compose.yml.j2'
         elif config['platform'] == 'magento':
-            template_file = '/opt/shophosting.io/templates/magento-compose.yml.j2'
+            template_file = '/opt/shophosting/templates/magento-compose.yml.j2'
         else:
             raise ProvisioningError(f"Unknown platform: {config['platform']}")
         
