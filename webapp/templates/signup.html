@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Sign Up - ShopHosting.io{% endblock %}
+{% block title %}Book a Free Consultation - ShopHosting.io{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -346,8 +346,8 @@
 <div class="auth-page">
     <div class="auth-container">
         <div class="auth-header">
-            <h1>Create Your Store</h1>
-            <p>Get your ecommerce store up and running in minutes</p>
+            <h1>Book a Free Consultation</h1>
+            <p>Tell us about your store and we'll reach out to schedule a call.</p>
         </div>
 
         <div class="auth-card-wrapper">
@@ -366,8 +366,8 @@
 
                 {% if not ports_available %}
                 <div class="capacity-warning">
-                    <strong>We're at capacity</strong>
-                    <p>Please check back later or contact us for availability.</p>
+                    <strong>High demand right now</strong>
+                    <p>We're expanding capacity. Submit your info and we'll contact you as soon as a spot opens.</p>
                 </div>
                 {% endif %}
 
@@ -413,7 +413,7 @@
                         {{ form.domain.label }}
                         {{ form.domain(class="form-control", placeholder="yourdomain.com") }}
                         <div class="form-help">
-                            Enter your domain name. Make sure to point your DNS to our servers.
+                            Enter your domain. We'll help you connect it if you need assistance.
                         </div>
                         {% for error in form.domain.errors %}
                             <div class="form-error">{{ error }}</div>
@@ -429,7 +429,7 @@
                                        {% if form.platform.data == 'woocommerce' or not form.platform.data %}checked{% endif %}>
                                 <label for="platform-woo">
                                     <strong>WooCommerce</strong>
-                                    <span>WordPress-powered</span>
+                                    <span>Most popular choice</span>
                                 </label>
                             </div>
                             <div class="platform-option">
@@ -437,7 +437,7 @@
                                        {% if form.platform.data == 'magento' %}checked{% endif %}>
                                 <label for="platform-magento">
                                     <strong>Magento</strong>
-                                    <span>Enterprise-grade</span>
+                                    <span>For larger catalogs</span>
                                 </label>
                             </div>
                         </div>

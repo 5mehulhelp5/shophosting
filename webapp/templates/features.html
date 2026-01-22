@@ -1,0 +1,387 @@
+{% extends "base.html" %}
+
+{% block title %}Features - ShopHosting.io{% endblock %}
+
+{% block extra_css %}
+<style>
+    .features-page {
+        padding: 40px 0 80px;
+    }
+
+    .features-header {
+        text-align: center;
+        margin-bottom: 60px;
+    }
+
+    .features-header h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 16px;
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .features-header p {
+        color: var(--text-secondary);
+        font-size: 1.1rem;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    /* Feature Sections */
+    .feature-section {
+        margin-bottom: 80px;
+    }
+
+    .feature-section:last-child {
+        margin-bottom: 0;
+    }
+
+    .section-label {
+        display: inline-block;
+        padding: 6px 14px;
+        background: var(--info-muted);
+        border: 1px solid var(--border-accent);
+        border-radius: 100px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--accent-cyan);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 16px;
+    }
+
+    .feature-section h2 {
+        font-size: 1.75rem;
+        font-weight: 700;
+        margin-bottom: 12px;
+        letter-spacing: -0.01em;
+    }
+
+    .feature-section > p {
+        color: var(--text-secondary);
+        font-size: 1.05rem;
+        max-width: 600px;
+        margin-bottom: 32px;
+    }
+
+    /* Feature Grid */
+    .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 24px;
+    }
+
+    .feature-card {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 28px;
+        transition: all 0.3s ease;
+    }
+
+    .feature-card:hover {
+        border-color: var(--border-accent);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-glow);
+    }
+
+    .feature-card-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: var(--radius-md);
+        background: var(--gradient-glow);
+        border: 1px solid var(--border-accent);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+        margin-bottom: 16px;
+    }
+
+    .feature-card h3 {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+        color: var(--text-primary);
+    }
+
+    .feature-card p {
+        color: var(--text-secondary);
+        font-size: 0.925rem;
+        line-height: 1.6;
+    }
+
+    /* Comparison Section */
+    .comparison-section {
+        background: var(--bg-deep);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl);
+        padding: 48px;
+        margin-top: 60px;
+    }
+
+    .comparison-section h2 {
+        text-align: center;
+        font-size: 1.5rem;
+        margin-bottom: 32px;
+    }
+
+    .comparison-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 32px;
+    }
+
+    .comparison-column h3 {
+        font-size: 1.15rem;
+        font-weight: 600;
+        margin-bottom: 20px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .comparison-column h3.highlight {
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .comparison-list {
+        list-style: none;
+    }
+
+    .comparison-list li {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 10px 0;
+        color: var(--text-secondary);
+        font-size: 0.925rem;
+    }
+
+    .comparison-list li::before {
+        content: '';
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        margin-top: 2px;
+    }
+
+    .comparison-list.included li::before {
+        background: var(--success);
+        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3'%3E%3Cpath d='M5 13l4 4L19 7'/%3E%3C/svg%3E") center/contain no-repeat;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3'%3E%3Cpath d='M5 13l4 4L19 7'/%3E%3C/svg%3E") center/contain no-repeat;
+    }
+
+    .comparison-list.not-included li::before {
+        background: var(--text-muted);
+        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M18 6L6 18M6 6l12 12'/%3E%3C/svg%3E") center/contain no-repeat;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Cpath d='M18 6L6 18M6 6l12 12'/%3E%3C/svg%3E") center/contain no-repeat;
+    }
+
+    /* CTA */
+    .features-cta {
+        text-align: center;
+        margin-top: 80px;
+        padding: 60px 40px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl);
+    }
+
+    .features-cta h2 {
+        font-size: 1.75rem;
+        margin-bottom: 12px;
+    }
+
+    .features-cta p {
+        color: var(--text-secondary);
+        margin-bottom: 28px;
+        max-width: 450px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    /* Animation */
+    .features-page {
+        animation: fadeIn 0.5s ease-out;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 768px) {
+        .comparison-section {
+            padding: 32px 24px;
+        }
+
+        .features-header h1 {
+            font-size: 2rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="features-page">
+        <div class="features-header">
+            <h1>Everything Your Store Needs</h1>
+            <p>We handle the technical stuff so you can focus on what matters: selling products and serving customers.</p>
+        </div>
+
+        <!-- Performance Features -->
+        <div class="feature-section">
+            <span class="section-label">Performance</span>
+            <h2>Fast Stores Sell More</h2>
+            <p>Every second counts. We make sure your store loads quickly on any device, anywhere in the world.</p>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#9889;</div>
+                    <h3>Built-in Caching</h3>
+                    <p>Redis object caching and Varnish for Magento stores. Your pages load faster without you configuring anything.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#127760;</div>
+                    <h3>Dedicated Resources</h3>
+                    <p>Your store gets its own isolated container with dedicated RAM and CPU. No sharing with noisy neighbors.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#128200;</div>
+                    <h3>Traffic Spike Ready</h3>
+                    <p>Black Friday, flash sales, going viral. Your store stays fast when traffic surges.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Security Features -->
+        <div class="feature-section">
+            <span class="section-label">Security</span>
+            <h2>Protected Without the Paranoia</h2>
+            <p>Sleep well knowing your store and customer data are protected by multiple layers of security.</p>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#128274;</div>
+                    <h3>Free SSL Certificates</h3>
+                    <p>Automatic HTTPS for your store. We handle certificate setup and renewals with Let's Encrypt.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#128737;</div>
+                    <h3>Automatic Security Updates</h3>
+                    <p>Critical security patches applied promptly. No more worrying about vulnerabilities you don't understand.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#128736;</div>
+                    <h3>Isolated Containers</h3>
+                    <p>Each store runs in its own Docker container. Your data stays separate from everyone else's.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#128699;</div>
+                    <h3>DDoS Protection</h3>
+                    <p>Basic protection against denial-of-service attacks that could take your store offline.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reliability Features -->
+        <div class="feature-section">
+            <span class="section-label">Reliability</span>
+            <h2>Always Open for Business</h2>
+            <p>Your store needs to be online when customers want to buy. We make sure it stays that way.</p>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#128065;</div>
+                    <h3>24/7 Monitoring</h3>
+                    <p>We watch your store around the clock. If something goes wrong, we often fix it before you notice.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#128190;</div>
+                    <h3>Daily Backups</h3>
+                    <p>Automatic encrypted backups every day with 30-day retention. Your data is safe even if disaster strikes.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#128203;</div>
+                    <h3>99.9% Uptime SLA</h3>
+                    <p>We guarantee your store will be available. If we fall short, you get service credits.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Management Features -->
+        <div class="feature-section">
+            <span class="section-label">Management</span>
+            <h2>We Handle the Headaches</h2>
+            <p>Running an online store is hard enough. Let us deal with the server stuff.</p>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#128295;</div>
+                    <h3>Managed Updates</h3>
+                    <p>We keep your platform updated and secure. No more dreading that "update available" notification.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#128221;</div>
+                    <h3>Simple Dashboard</h3>
+                    <p>See your store status, credentials, and important info in one place. Built for store owners, not sysadmins.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#128231;</div>
+                    <h3>Free Migration Help</h3>
+                    <p>Moving from another host? We'll help migrate your store with zero downtime. You just change DNS.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-card-icon">&#128172;</div>
+                    <h3>Real Human Support</h3>
+                    <p>Questions? Talk to people who actually know WooCommerce and Magento. Not bots. Not scripts.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Comparison -->
+        <div class="comparison-section">
+            <h2>What You Get vs. Typical Shared Hosting</h2>
+            <div class="comparison-grid">
+                <div class="comparison-column">
+                    <h3 class="highlight">ShopHosting.io</h3>
+                    <ul class="comparison-list included">
+                        <li>Dedicated container with isolated resources</li>
+                        <li>Redis/Varnish caching included</li>
+                        <li>Daily encrypted backups</li>
+                        <li>Automatic security updates</li>
+                        <li>Free SSL certificates</li>
+                        <li>eCommerce-specialized support</li>
+                        <li>Free migration assistance</li>
+                        <li>99.9% uptime guarantee</li>
+                    </ul>
+                </div>
+                <div class="comparison-column">
+                    <h3>Budget Shared Hosting</h3>
+                    <ul class="comparison-list not-included">
+                        <li>Shared server with hundreds of sites</li>
+                        <li>Caching costs extra or DIY</li>
+                        <li>Backups cost extra or manual</li>
+                        <li>You manage your own updates</li>
+                        <li>SSL often costs extra</li>
+                        <li>Generic support, long wait times</li>
+                        <li>Migration is your problem</li>
+                        <li>No real uptime guarantee</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- CTA -->
+        <div class="features-cta">
+            <h2>Ready to See What We Can Do for Your Store?</h2>
+            <p>Let's talk about your needs and show you how ShopHosting.io can help your business grow.</p>
+            <a href="{{ url_for('signup') }}" class="btn btn-primary">Book a Free Consultation</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

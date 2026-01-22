@@ -181,6 +181,42 @@ def pricing():
     return render_template('pricing.html', plans=plans)
 
 
+@app.route('/features')
+def features():
+    """Features page"""
+    return render_template('features.html')
+
+
+@app.route('/about')
+def about():
+    """About us page"""
+    return render_template('about.html')
+
+
+@app.route('/contact')
+def contact():
+    """Contact us page"""
+    return render_template('contact.html')
+
+
+@app.route('/contact', methods=['POST'])
+def contact_submit():
+    """Handle contact form submission"""
+    name = request.form.get('name')
+    email = request.form.get('email')
+    subject = request.form.get('subject')
+    website = request.form.get('website', '')
+    message = request.form.get('message')
+
+    # Log the contact form submission
+    logger.info(f"Contact form submission: {name} ({email}) - Subject: {subject}")
+
+    # TODO: Send email notification to support team
+    # For now, just flash a success message
+    flash('Thanks for reaching out! We\'ll get back to you within one business day.', 'success')
+    return redirect(url_for('contact'))
+
+
 @app.route('/signup', methods=['GET', 'POST'])
 @app.route('/signup/<plan_slug>', methods=['GET', 'POST'])
 def signup(plan_slug=None):

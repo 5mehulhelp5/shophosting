@@ -184,7 +184,10 @@ class ProvisioningWorker:
                 vcl_template = Path('/opt/shophosting/templates/magento-varnish.vcl.j2')
                 if vcl_template.exists():
                     import shutil
-                    shutil.copy(vcl_template, varnish_dir / "default.vcl")
+                    dest = varnish_dir / "default.vcl"
+                    if dest.exists() and dest.is_dir():
+                        shutil.rmtree(dest)
+                    shutil.copy(vcl_template, dest)
             
             # Set appropriate permissions
             os.chmod(customer_path, 0o755)
@@ -318,15 +321,12 @@ class ProvisioningWorker:
     listen 80;
     listen [::]:80;
     server_name {domain};
-    
+
     # Allow certbot to verify domain
     location /.well-known/acme-challenge/ {{
         root /var/www/html;
     }}
-    
-    # Redirect HTTP to HTTPS (will be enabled after SSL is set up)
-    # return 301 https://$server_name$request_uri;
-    
+
     # Temporary: proxy to container before SSL is set up
     location / {{
         proxy_pass http://localhost:{port};
@@ -334,21 +334,22 @@ class ProvisioningWorker:
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
+
         # Timeouts
         proxy_connect_timeout 600;
         proxy_send_timeout 600;
         proxy_read_timeout 600;
         send_timeout 600;
-        
+
         # Large file uploads
         client_max_body_size 100M;
     }}
-    
+
     # Logs
     access_log /var/log/nginx/customer-{customer_id}-access.log;
     error_log /var/log/nginx/customer-{customer_id}-error.log;
 }}
+"""
 
 # HTTPS configuration (will be uncommented after SSL cert is obtained)
 # server {{
@@ -376,12 +377,13 @@ class ProvisioningWorker:
 #         send_timeout 600;
 #         
 #         client_max_body_size 100M;
-#     }}
-#     
-#     access_log /var/log/nginx/customer-{customer_id}-access.log;
-#     error_log /var/log/nginx/customer-{customer_id}-error.log;
-# }}
-"""
+#    }}
+#   
+#    access_log /var/log/nginx/customer-{customer_id}-access.log;
+#    error_log /var/log/nginx/customer-{customer_id}-error.log;
+
+#}}
+#"""
         
         try:
             import tempfile
@@ -470,18 +472,39 @@ class ProvisioningWorker:
         try:
             import time
 
+            # Magento has more dependencies and takes longer to start
+            max_attempts = 60 if config['platform'] == 'magento' else 30  # 10 min for Magento, 5 min for WooCommerce
+
             # Wait for the web container to be running and responding
             logger.info(f"Waiting for container {container_name} to be ready...")
-            for attempt in range(12):  # Wait up to 2 minutes
+            container_running = False
+            for attempt in range(max_attempts):
                 result = subprocess.run(
-                    f"docker inspect {container_name} --format '{{{{.State.Running}}}}'",
+                    f"docker inspect {container_name} --format '{{{{.State.Status}}}}'",
                     shell=True, capture_output=True, text=True, timeout=10
                 )
-                if 'true' in result.stdout.lower():
+                if 'running' in result.stdout.lower():
                     logger.info(f"Container {container_name} is running")
+                    container_running = True
                     break
-                logger.info(f"Waiting for container... attempt {attempt + 1}/12")
+
+                # Check if container exited with error
+                exit_check = subprocess.run(
+                    f"docker inspect {container_name} --format '{{{{.State.Status}}}} {{{{.State.ExitCode}}}}'",
+                    shell=True, capture_output=True, text=True, timeout=10
+                )
+                if 'exited' in exit_check.stdout.lower():
+                    logs = subprocess.run(
+                        f"docker logs {container_name} --tail 20",
+                        shell=True, capture_output=True, text=True, timeout=10
+                    )
+                    raise ProvisioningError(f"Container exited unexpectedly: {logs.stderr or logs.stdout}")
+
+                logger.info(f"Waiting for container... attempt {attempt + 1}/{max_attempts}")
                 time.sleep(10)
+
+            if not container_running:
+                raise ProvisioningError(f"Container {container_name} failed to start within timeout")
 
             if config['platform'] == 'woocommerce':
                 # WordPress will auto-setup via web interface on first visit
@@ -490,11 +513,21 @@ class ProvisioningWorker:
                 commands = []  # No commands needed - WordPress handles setup via web
             elif config['platform'] == 'magento':
                 # Magento is pre-installed in the image via environment variables
-                # Just verify it's running
+                # Wait a bit more for PHP-FPM to be ready, then verify
+                logger.info("Waiting for Magento to initialize...")
+                time.sleep(15)
                 commands = [
                     f"docker exec {container_name} php -v"  # Simple health check
                 ]
-            
+
+            # Final check before running commands
+            final_check = subprocess.run(
+                f"docker inspect {container_name} --format '{{{{.State.Status}}}}'",
+                shell=True, capture_output=True, text=True, timeout=10
+            )
+            if 'running' not in final_check.stdout.lower():
+                raise ProvisioningError(f"Container {container_name} is not running (status: {final_check.stdout.strip()})")   
+
             for cmd in commands:
                 logger.info(f"Running: {cmd}")
                 result = subprocess.run(
@@ -504,10 +537,11 @@ class ProvisioningWorker:
                     text=True,
                     timeout=600  # 10 minute timeout for installation
                 )
-                
+
                 if result.returncode != 0:
-                    logger.error(f"Installation command failed: {result.stderr}")
-                    raise ProvisioningError(f"Application installation failed: {result.stderr}")
+                    error_detail = result.stderr.strip() or result.stdout.strip() or f"Exit code {result.returncode}"
+                    logger.error(f"Installation command failed: {error_detail}")
+                    raise ProvisioningError(f"Application installation failed: {error_detail}")
             
             logger.info(f"Application installed for customer {config['customer_id']}")
             return True
@@ -561,18 +595,18 @@ class ProvisioningWorker:
             if customer_path and customer_path.exists():
                 shutil.rmtree(customer_path)
             
-            # Remove Nginx config
+            # Remove Nginx config (using sudo)
             nginx_available = Path(f"/etc/nginx/sites-available/customer-{customer_id}.conf")
             nginx_enabled = Path(f"/etc/nginx/sites-enabled/customer-{customer_id}.conf")
-            
+
             if nginx_enabled.exists():
-                nginx_enabled.unlink()
+                subprocess.run(['sudo', 'rm', '-f', str(nginx_enabled)], capture_output=True)
             if nginx_available.exists():
-                nginx_available.unlink()
-            
+                subprocess.run(['sudo', 'rm', '-f', str(nginx_available)], capture_output=True)
+
             # Reload nginx
             try:
-                subprocess.run(['systemctl', 'reload', 'nginx'], check=True)
+                subprocess.run(['sudo', 'systemctl', 'reload', 'nginx'], check=True)
             except:
                 pass
             
@@ -594,7 +628,28 @@ class ProvisioningWorker:
             self.update_job_status(rq_job_id, 'started')
 
         self.update_customer_status(customer_id, 'provisioning')
-        
+
+        # Clean up any existing resources from a previous failed attempt
+        existing_path = self.base_path / f"customer-{customer_id}"
+        if existing_path.exists():
+            logger.info(f"Cleaning up existing resources for customer {customer_id}")
+            try:
+                # Stop containers first
+                subprocess.run(
+                    ['docker', 'compose', 'down', '-v', '--remove-orphans'],
+                    cwd=str(existing_path),
+                    capture_output=True,
+                    timeout=60
+                )
+                # Remove directory with sudo (Docker creates files as root)
+                subprocess.run(
+                    ['sudo', 'rm', '-rf', str(existing_path)],
+                    capture_output=True,
+                    timeout=30
+                )
+            except Exception as e:
+                logger.warning(f"Cleanup of existing resources failed: {e}")
+
         try:
             # Step 1: Create directory structure
             customer_path = self.create_customer_directory(customer_id, job_data['platform'])

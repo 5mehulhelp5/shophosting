@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Pricing - ShopHosting.io{% endblock %}
+{% block title %}Simple Pricing, Everything Included - ShopHosting.io{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -314,8 +314,8 @@
 <div class="container">
     <div class="pricing-page">
         <div class="pricing-header">
-            <h1>Choose Your Plan</h1>
-            <p>Powerful managed hosting for your e-commerce store. No hidden fees, cancel anytime.</p>
+            <h1>One Price. Everything Included.</h1>
+            <p>No surprise fees. No extra charges for SSL, backups, security, or support. Just pick a plan and start selling.</p>
         </div>
 
         <!-- Platform Tabs -->
@@ -349,7 +349,7 @@
                         <li {% if not plan.has_feature('premium_plugins') %}class="unavailable"{% endif %}>Premium plugins included</li>
                         <li {% if not plan.has_feature('support_24_7') %}class="unavailable"{% endif %}>24/7 priority support</li>
                     </ul>
-                    <a href="{{ url_for('signup', plan=plan.slug) }}" class="btn btn-primary plan-cta">Get Started</a>
+                    <a href="{{ url_for('signup', plan=plan.slug) }}" class="btn btn-primary plan-cta">Talk to Us</a>
                 </div>
                 {% endfor %}
             </div>
@@ -377,7 +377,7 @@
                         <li {% if not plan.has_feature('support_24_7') %}class="unavailable"{% endif %}>24/7 priority support</li>
                         <li {% if not plan.has_feature('dedicated_support') %}class="unavailable"{% endif %}>Dedicated support channel</li>
                     </ul>
-                    <a href="{{ url_for('signup', plan=plan.slug) }}" class="btn btn-primary plan-cta">Get Started</a>
+                    <a href="{{ url_for('signup', plan=plan.slug) }}" class="btn btn-primary plan-cta">Talk to Us</a>
                 </div>
                 {% endfor %}
             </div>
@@ -408,7 +408,7 @@
                         <li {% if not plan.has_feature('premium_plugins') %}class="unavailable"{% endif %}>Premium extensions</li>
                         <li {% if not plan.has_feature('support_24_7') %}class="unavailable"{% endif %}>24/7 priority support</li>
                     </ul>
-                    <a href="{{ url_for('signup', plan=plan.slug) }}" class="btn btn-primary plan-cta">Get Started</a>
+                    <a href="{{ url_for('signup', plan=plan.slug) }}" class="btn btn-primary plan-cta">Talk to Us</a>
                 </div>
                 {% endfor %}
             </div>
@@ -436,18 +436,18 @@
                         <li {% if not plan.has_feature('support_24_7') %}class="unavailable"{% endif %}>24/7 priority support</li>
                         <li {% if not plan.has_feature('dedicated_support') %}class="unavailable"{% endif %}>Dedicated support channel</li>
                     </ul>
-                    <a href="{{ url_for('signup', plan=plan.slug) }}" class="btn btn-primary plan-cta">Get Started</a>
+                    <a href="{{ url_for('signup', plan=plan.slug) }}" class="btn btn-primary plan-cta">Talk to Us</a>
                 </div>
                 {% endfor %}
             </div>
         </div>
 
         <div class="pricing-info">
-            <h3>All plans include</h3>
+            <h3>Every Plan Includes Everything You Need</h3>
             <p>
-                Free SSL certificates, automated security updates, DDoS protection,
-                99.9% uptime SLA, and our expert migration assistance.
-                Have questions? <a href="mailto:sales@shophosting.io">Contact our sales team</a>.
+                SSL certificates. Security updates. Daily backups. DDoS protection. 99.9% uptime guarantee.
+                Plus, we'll help migrate your existing store for free.
+                Have questions? <a href="mailto:sales@shophosting.io">Talk to a real person</a>.
             </p>
         </div>
     </div>

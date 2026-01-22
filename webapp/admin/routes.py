@@ -257,17 +257,17 @@ def customer_retry_provisioning(customer_id):
                 timeout=30
             )
 
-        # Remove any existing Nginx config
+        # Remove any existing Nginx config (using sudo)
         nginx_available = f"/etc/nginx/sites-available/customer-{customer_id}.conf"
         nginx_enabled = f"/etc/nginx/sites-enabled/customer-{customer_id}.conf"
 
         if os.path.exists(nginx_enabled):
-            os.unlink(nginx_enabled)
+            subprocess.run(['sudo', 'rm', '-f', nginx_enabled], capture_output=True)
         if os.path.exists(nginx_available):
-            os.unlink(nginx_available)
+            subprocess.run(['sudo', 'rm', '-f', nginx_available], capture_output=True)
 
         # Reload nginx to apply changes
-        subprocess.run(['systemctl', 'reload', 'nginx'], capture_output=True)
+        subprocess.run(['sudo', 'systemctl', 'reload', 'nginx'], capture_output=True)
 
         # Update customer status to provisioning
         conn = get_db_connection()
@@ -940,7 +940,16 @@ def get_customer_audit_logs(customer_id, limit=20):
 
 
 def get_queue_stats():
-    """Get Redis queue statistics"""
+    """Get queue statistics from Redis (live) and database (historical)"""
+    stats = {
+        'queued': 0,
+        'started': 0,
+        'finished': 0,
+        'failed': 0,
+        'connected': False
+    }
+
+    # Get live queue stats from Redis - this is the source of truth for active jobs
     try:
         from redis import Redis
         from rq import Queue
@@ -949,22 +958,46 @@ def get_queue_stats():
         redis_conn = Redis(host=redis_host, port=6379)
         queue = Queue('provisioning', connection=redis_conn)
 
-        return {
-            'queued': len(queue),
-            'started': len(queue.started_job_registry),
-            'finished': len(queue.finished_job_registry),
-            'failed': len(queue.failed_job_registry),
-            'connected': True
-        }
+        stats['queued'] = len(queue)
+        stats['started'] = len(queue.started_job_registry)
+        stats['connected'] = True
     except Exception as e:
-        return {
-            'queued': 0,
-            'started': 0,
-            'finished': 0,
-            'failed': 0,
-            'connected': False,
-            'error': str(e)
-        }
+        stats['error'] = str(e)
+
+    # Get historical counts from database - only count most recent job per customer
+    # and only if the customer status matches the job status for consistency
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # Count finished jobs (customers who are now active)
+        cursor.execute("""
+            SELECT COUNT(DISTINCT pj.customer_id) as count
+            FROM provisioning_jobs pj
+            INNER JOIN customers c ON pj.customer_id = c.id
+            WHERE pj.status = 'finished' AND c.status = 'active'
+        """)
+        row = cursor.fetchone()
+        if row:
+            stats['finished'] = row['count']
+
+        # Count failed jobs (only for customers still in failed status)
+        cursor.execute("""
+            SELECT COUNT(DISTINCT pj.customer_id) as count
+            FROM provisioning_jobs pj
+            INNER JOIN customers c ON pj.customer_id = c.id
+            WHERE pj.status = 'failed' AND c.status = 'failed'
+        """)
+        row = cursor.fetchone()
+        if row:
+            stats['failed'] = row['count']
+
+        cursor.close()
+        conn.close()
+    except Exception:
+        pass
+
+    return stats
 
 
 def get_service_status():

@@ -9,16 +9,16 @@ services:
     container_name: {{ container_prefix }}-db
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: "{{ db_name }}"
-      MYSQL_USER: "{{ db_user }}"
-      MYSQL_PASSWORD: "{{ db_password }}"
-      MYSQL_ROOT_PASSWORD: "{{ db_password }}"
+       MYSQL_DATABASE: "{{ db_name }}"
+       MYSQL_USER: "{{ db_user }}"
+       MYSQL_PASSWORD: "{{ db_password | replace('$', '$$') }}"
+       MYSQL_ROOT_PASSWORD: "{{ db_password | replace('$', '$$') }}"
     volumes:
       - "/var/customers/{{ container_prefix }}/mysql:/var/lib/mysql"
     networks:
       - {{ container_prefix }}-network
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p{{ db_password }} --silent"]
+       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p{{ db_password | replace('$', '$$') }} --silent"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -45,10 +45,10 @@ services:
     ports:
       - "{{ web_port }}:80"
     environment:
-      WORDPRESS_DB_HOST: "db:3306"
-      WORDPRESS_DB_USER: "{{ db_user }}"
-      WORDPRESS_DB_PASSWORD: "{{ db_password }}"
-      WORDPRESS_DB_NAME: "{{ db_name }}"
+       WORDPRESS_DB_HOST: "db:3306"
+       WORDPRESS_DB_USER: "{{ db_user }}"
+       WORDPRESS_DB_PASSWORD: "{{ db_password | replace('$', '$$') }}"
+       WORDPRESS_DB_NAME: "{{ db_name }}"
       WP_HOME: "https://{{ domain }}"
       WP_SITEURL: "https://{{ domain }}"
       WP_REDIS_HOST: "redis"
