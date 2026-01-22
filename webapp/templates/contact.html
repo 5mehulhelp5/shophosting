@@ -1,0 +1,434 @@
+{% extends "base.html" %}
+
+{% block title %}Contact Us - ShopHosting.io{% endblock %}
+
+{% block extra_css %}
+<style>
+    .contact-page {
+        padding: 40px 0 80px;
+    }
+
+    .contact-header {
+        text-align: center;
+        margin-bottom: 60px;
+    }
+
+    .contact-header h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 16px;
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .contact-header p {
+        color: var(--text-secondary);
+        font-size: 1.1rem;
+        max-width: 500px;
+        margin: 0 auto;
+    }
+
+    /* Contact Grid */
+    .contact-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 48px;
+        max-width: 1000px;
+        margin: 0 auto;
+    }
+
+    /* Contact Info */
+    .contact-info {
+        padding-top: 20px;
+    }
+
+    .contact-info h2 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 24px;
+    }
+
+    .contact-methods {
+        margin-bottom: 40px;
+    }
+
+    .contact-method {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 20px 0;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .contact-method:first-child {
+        padding-top: 0;
+    }
+
+    .contact-method:last-child {
+        border-bottom: none;
+    }
+
+    .contact-method-icon {
+        width: 44px;
+        height: 44px;
+        background: var(--gradient-glow);
+        border: 1px solid var(--border-accent);
+        border-radius: var(--radius-md);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+        flex-shrink: 0;
+    }
+
+    .contact-method-content h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 4px;
+        color: var(--text-primary);
+    }
+
+    .contact-method-content p {
+        color: var(--text-secondary);
+        font-size: 0.925rem;
+        margin-bottom: 4px;
+    }
+
+    .contact-method-content a {
+        color: var(--accent-cyan);
+        text-decoration: none;
+        font-weight: 500;
+        transition: color 0.2s ease;
+    }
+
+    .contact-method-content a:hover {
+        color: var(--accent-blue);
+    }
+
+    /* Response Time */
+    .response-info {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 24px;
+    }
+
+    .response-info h3 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 12px;
+        color: var(--text-primary);
+    }
+
+    .response-info p {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.6;
+    }
+
+    .response-info strong {
+        color: var(--text-primary);
+    }
+
+    /* Contact Form */
+    .contact-form-wrapper {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl);
+        padding: 36px;
+        position: relative;
+    }
+
+    .contact-form-wrapper::before {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border-radius: inherit;
+        padding: 1px;
+        background: var(--gradient-border);
+        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        opacity: 0.5;
+        pointer-events: none;
+    }
+
+    .contact-form h2 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-bottom: 24px;
+    }
+
+    .contact-form .form-group {
+        margin-bottom: 20px;
+    }
+
+    .contact-form label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .contact-form .form-control {
+        width: 100%;
+        padding: 14px 16px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
+        font-size: 1rem;
+        color: var(--text-primary);
+        font-family: inherit;
+        transition: all 0.2s ease;
+    }
+
+    .contact-form .form-control::placeholder {
+        color: var(--text-muted);
+    }
+
+    .contact-form .form-control:hover {
+        border-color: var(--border-accent);
+    }
+
+    .contact-form .form-control:focus {
+        outline: none;
+        border-color: var(--accent-blue);
+        box-shadow: 0 0 0 3px rgba(0, 136, 255, 0.12);
+        background: var(--bg-elevated);
+    }
+
+    .contact-form textarea.form-control {
+        min-height: 140px;
+        resize: vertical;
+    }
+
+    .contact-form .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+
+    .contact-form .btn-primary {
+        width: 100%;
+        padding: 16px 24px;
+        font-size: 1rem;
+        font-weight: 600;
+        margin-top: 8px;
+    }
+
+    .form-note {
+        text-align: center;
+        margin-top: 16px;
+        color: var(--text-tertiary);
+        font-size: 0.85rem;
+    }
+
+    /* FAQ Section */
+    .faq-section {
+        max-width: 800px;
+        margin: 80px auto 0;
+    }
+
+    .faq-section h2 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 32px;
+        text-align: center;
+    }
+
+    .faq-list {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .faq-item {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 24px;
+        transition: all 0.2s ease;
+    }
+
+    .faq-item:hover {
+        border-color: var(--border-accent);
+    }
+
+    .faq-item h3 {
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: var(--text-primary);
+    }
+
+    .faq-item p {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+        line-height: 1.6;
+    }
+
+    /* Animation */
+    .contact-page {
+        animation: fadeIn 0.5s ease-out;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 900px) {
+        .contact-grid {
+            grid-template-columns: 1fr;
+            gap: 40px;
+        }
+
+        .contact-info {
+            order: 1;
+            padding-top: 0;
+        }
+
+        .contact-form-wrapper {
+            order: 0;
+        }
+    }
+
+    @media (max-width: 540px) {
+        .contact-form .form-row {
+            grid-template-columns: 1fr;
+        }
+
+        .contact-form-wrapper {
+            padding: 28px 20px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="contact-page">
+        <div class="contact-header">
+            <h1>Get in Touch</h1>
+            <p>Have questions? We'd love to hear from you. Send us a message and we'll respond as soon as we can.</p>
+        </div>
+
+        <div class="contact-grid">
+            <!-- Contact Form -->
+            <div class="contact-form-wrapper">
+                <form class="contact-form" action="{{ url_for('contact_submit') }}" method="POST">
+                    <h2>Send Us a Message</h2>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="name">Your Name</label>
+                            <input type="text" id="name" name="name" class="form-control" placeholder="John Smith" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="email">Email Address</label>
+                            <input type="email" id="email" name="email" class="form-control" placeholder="you@example.com" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="subject">Subject</label>
+                        <select id="subject" name="subject" class="form-control" required>
+                            <option value="">Select a topic...</option>
+                            <option value="sales">Sales Question</option>
+                            <option value="support">Technical Support</option>
+                            <option value="billing">Billing Question</option>
+                            <option value="migration">Migration Help</option>
+                            <option value="partnership">Partnership Inquiry</option>
+                            <option value="other">Something Else</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="website">Current Website (optional)</label>
+                        <input type="url" id="website" name="website" class="form-control" placeholder="https://yourstore.com">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="message">Message</label>
+                        <textarea id="message" name="message" class="form-control" placeholder="Tell us how we can help..." required></textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Send Message</button>
+                    <p class="form-note">We typically respond within a few hours during business days.</p>
+                </form>
+            </div>
+
+            <!-- Contact Info -->
+            <div class="contact-info">
+                <h2>Other Ways to Reach Us</h2>
+
+                <div class="contact-methods">
+                    <div class="contact-method">
+                        <div class="contact-method-icon">&#128231;</div>
+                        <div class="contact-method-content">
+                            <h3>Email</h3>
+                            <p>For general questions</p>
+                            <a href="mailto:hello@shophosting.io">hello@shophosting.io</a>
+                        </div>
+                    </div>
+
+                    <div class="contact-method">
+                        <div class="contact-method-icon">&#128736;</div>
+                        <div class="contact-method-content">
+                            <h3>Technical Support</h3>
+                            <p>For existing customers</p>
+                            <a href="mailto:support@shophosting.io">support@shophosting.io</a>
+                        </div>
+                    </div>
+
+                    <div class="contact-method">
+                        <div class="contact-method-icon">&#128176;</div>
+                        <div class="contact-method-content">
+                            <h3>Sales</h3>
+                            <p>Questions about plans or pricing</p>
+                            <a href="mailto:sales@shophosting.io">sales@shophosting.io</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="response-info">
+                    <h3>Response Times</h3>
+                    <p>
+                        <strong>Sales inquiries:</strong> Within a few hours<br>
+                        <strong>Support tickets:</strong> Under 2 hours average<br>
+                        <strong>General questions:</strong> Same business day
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- FAQ Section -->
+        <div class="faq-section">
+            <h2>Common Questions</h2>
+            <div class="faq-list">
+                <div class="faq-item">
+                    <h3>Do you offer phone support?</h3>
+                    <p>We primarily offer support via email and chat. For complex issues, we're happy to schedule a call. Just let us know in your message.</p>
+                </div>
+                <div class="faq-item">
+                    <h3>Can you help migrate my existing store?</h3>
+                    <p>Yes! We offer free migration assistance for all new customers. We'll move your store with zero downtime. You just need to update your DNS when we're ready.</p>
+                </div>
+                <div class="faq-item">
+                    <h3>What are your business hours?</h3>
+                    <p>Our team is available Monday through Friday, 9am to 6pm Eastern Time. However, our monitoring systems watch your store 24/7.</p>
+                </div>
+                <div class="faq-item">
+                    <h3>I'm not sure which plan I need. Can you help?</h3>
+                    <p>Absolutely. Book a free consultation and we'll review your store's needs together. We'll recommend the right plan based on your traffic, catalog size, and growth plans.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

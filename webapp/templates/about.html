@@ -1,0 +1,426 @@
+{% extends "base.html" %}
+
+{% block title %}About Us - ShopHosting.io{% endblock %}
+
+{% block extra_css %}
+<style>
+    .about-page {
+        padding: 40px 0 80px;
+    }
+
+    .about-header {
+        text-align: center;
+        margin-bottom: 60px;
+    }
+
+    .about-header h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 16px;
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .about-header p {
+        color: var(--text-secondary);
+        font-size: 1.1rem;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    /* Story Section */
+    .story-section {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 60px;
+        align-items: center;
+        margin-bottom: 80px;
+    }
+
+    .story-content h2 {
+        font-size: 1.75rem;
+        font-weight: 700;
+        margin-bottom: 20px;
+        letter-spacing: -0.01em;
+    }
+
+    .story-content p {
+        color: var(--text-secondary);
+        font-size: 1.05rem;
+        line-height: 1.8;
+        margin-bottom: 16px;
+    }
+
+    .story-stats {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 24px;
+    }
+
+    .story-stat {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 28px;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+
+    .story-stat:hover {
+        border-color: var(--border-accent);
+        box-shadow: var(--shadow-glow);
+    }
+
+    .story-stat-value {
+        font-size: 2.5rem;
+        font-weight: 700;
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        line-height: 1;
+        margin-bottom: 8px;
+    }
+
+    .story-stat-label {
+        color: var(--text-tertiary);
+        font-size: 0.9rem;
+    }
+
+    /* Mission Section */
+    .mission-section {
+        background: var(--bg-deep);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl);
+        padding: 60px;
+        text-align: center;
+        margin-bottom: 80px;
+    }
+
+    .mission-section h2 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 20px;
+    }
+
+    .mission-section p {
+        color: var(--text-secondary);
+        font-size: 1.15rem;
+        line-height: 1.8;
+        max-width: 700px;
+        margin: 0 auto;
+    }
+
+    .mission-section p strong {
+        color: var(--text-primary);
+    }
+
+    /* Values Section */
+    .values-section {
+        margin-bottom: 80px;
+    }
+
+    .values-section h2 {
+        font-size: 1.75rem;
+        font-weight: 700;
+        margin-bottom: 40px;
+        text-align: center;
+    }
+
+    .values-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 24px;
+    }
+
+    .value-card {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 32px;
+        transition: all 0.3s ease;
+    }
+
+    .value-card:hover {
+        border-color: var(--border-accent);
+        transform: translateY(-2px);
+    }
+
+    .value-icon {
+        font-size: 2rem;
+        margin-bottom: 16px;
+    }
+
+    .value-card h3 {
+        font-size: 1.15rem;
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: var(--text-primary);
+    }
+
+    .value-card p {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+        line-height: 1.6;
+    }
+
+    /* Why Section */
+    .why-section {
+        margin-bottom: 80px;
+    }
+
+    .why-section h2 {
+        font-size: 1.75rem;
+        font-weight: 700;
+        margin-bottom: 20px;
+    }
+
+    .why-section > p {
+        color: var(--text-secondary);
+        font-size: 1.05rem;
+        line-height: 1.8;
+        margin-bottom: 32px;
+        max-width: 700px;
+    }
+
+    .why-list {
+        list-style: none;
+    }
+
+    .why-list li {
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 20px 0;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .why-list li:last-child {
+        border-bottom: none;
+    }
+
+    .why-number {
+        width: 32px;
+        height: 32px;
+        background: var(--gradient-glow);
+        border: 1px solid var(--border-accent);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: var(--accent-cyan);
+        flex-shrink: 0;
+    }
+
+    .why-content h3 {
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: var(--text-primary);
+    }
+
+    .why-content p {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+        line-height: 1.6;
+    }
+
+    /* Location */
+    .location-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 18px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
+        border-radius: 100px;
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        margin-top: 24px;
+    }
+
+    /* CTA */
+    .about-cta {
+        text-align: center;
+        padding: 60px 40px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-xl);
+    }
+
+    .about-cta h2 {
+        font-size: 1.75rem;
+        margin-bottom: 12px;
+    }
+
+    .about-cta p {
+        color: var(--text-secondary);
+        margin-bottom: 28px;
+        max-width: 450px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    /* Animation */
+    .about-page {
+        animation: fadeIn 0.5s ease-out;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 900px) {
+        .story-section {
+            grid-template-columns: 1fr;
+            gap: 40px;
+        }
+
+        .story-stats {
+            order: -1;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .about-header h1 {
+            font-size: 2rem;
+        }
+
+        .mission-section {
+            padding: 40px 24px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="about-page">
+        <div class="about-header">
+            <h1>About ShopHosting.io</h1>
+            <p>We help small store owners run fast, reliable online stores without the technical headaches.</p>
+        </div>
+
+        <!-- Story Section -->
+        <div class="story-section">
+            <div class="story-content">
+                <h2>Built for Store Owners Like You</h2>
+                <p>
+                    We started ShopHosting.io because we saw too many small business owners struggling with their hosting.
+                    Slow sites during sales. Confusing server errors. Hours lost to technical problems instead of running their business.
+                </p>
+                <p>
+                    We believe store owners shouldn't need to become server experts just to sell products online.
+                    That's why we handle all the technical complexity behind the scenes, so you can focus on what you do best.
+                </p>
+                <div class="location-badge">
+                    <span>&#128205;</span> Frederick, Maryland
+                </div>
+            </div>
+            <div class="story-stats">
+                <div class="story-stat">
+                    <div class="story-stat-value">100+</div>
+                    <div class="story-stat-label">Stores Managed</div>
+                </div>
+                <div class="story-stat">
+                    <div class="story-stat-value">99.9%</div>
+                    <div class="story-stat-label">Uptime</div>
+                </div>
+                <div class="story-stat">
+                    <div class="story-stat-value">2026</div>
+                    <div class="story-stat-label">Founded</div>
+                </div>
+                <div class="story-stat">
+                    <div class="story-stat-value">2</div>
+                    <div class="story-stat-label">Platforms Supported</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mission Section -->
+        <div class="mission-section">
+            <h2>Our Mission</h2>
+            <p>
+                <strong>To give small store owners peace of mind</strong>, knowing their online store is fast, secure, and professionally managed.
+                We want to be the hosting company you recommend when someone asks, "Who handles everything for you?"
+            </p>
+        </div>
+
+        <!-- Values Section -->
+        <div class="values-section">
+            <h2>What We Believe</h2>
+            <div class="values-grid">
+                <div class="value-card">
+                    <div class="value-icon">&#128172;</div>
+                    <h3>Plain Language</h3>
+                    <p>We explain things in terms you understand, not technical jargon designed to confuse you or make us sound smart.</p>
+                </div>
+                <div class="value-card">
+                    <div class="value-icon">&#128176;</div>
+                    <h3>No Surprise Fees</h3>
+                    <p>One price includes everything. We won't nickel-and-dime you for SSL certificates, backups, or "premium" support.</p>
+                </div>
+                <div class="value-card">
+                    <div class="value-icon">&#129309;</div>
+                    <h3>Real Support</h3>
+                    <p>When you contact us, you talk to humans who actually know eCommerce hosting. Not scripts. Not bots.</p>
+                </div>
+                <div class="value-card">
+                    <div class="value-icon">&#127919;</div>
+                    <h3>Specialization</h3>
+                    <p>We only do WooCommerce and Magento. By focusing on two platforms, we do them really well.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Why Section -->
+        <div class="why-section">
+            <h2>Why We're Different</h2>
+            <p>Most hosting companies try to be everything to everyone. We take a different approach.</p>
+            <ul class="why-list">
+                <li>
+                    <span class="why-number">1</span>
+                    <div class="why-content">
+                        <h3>eCommerce Only</h3>
+                        <p>We specialize in WooCommerce and Magento. No blogs, no portfolios, no general websites. Just online stores.</p>
+                    </div>
+                </li>
+                <li>
+                    <span class="why-number">2</span>
+                    <div class="why-content">
+                        <h3>Actually Managed</h3>
+                        <p>When we say "managed," we mean it. Updates, security, backups, monitoring. All handled. Not "managed" in name only.</p>
+                    </div>
+                </li>
+                <li>
+                    <span class="why-number">3</span>
+                    <div class="why-content">
+                        <h3>Built for Non-Technical Owners</h3>
+                        <p>Our dashboard and tools are designed for store owners who just want their site to work, not for developers.</p>
+                    </div>
+                </li>
+                <li>
+                    <span class="why-number">4</span>
+                    <div class="why-content">
+                        <h3>Isolated Containers</h3>
+                        <p>Each store gets its own Docker containers. Your performance and security aren't affected by other customers.</p>
+                    </div>
+                </li>
+            </ul>
+        </div>
+
+        <!-- CTA -->
+        <div class="about-cta">
+            <h2>Ready to Talk?</h2>
+            <p>We'd love to learn about your store and see if we're a good fit for each other.</p>
+            <a href="{{ url_for('signup') }}" class="btn btn-primary">Book a Free Consultation</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
