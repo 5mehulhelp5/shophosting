@@ -910,6 +910,7 @@ def api_credentials():
 @app.route('/api/backup', methods=['POST'])
 @login_required
 @limiter.limit("3 per hour", error_message="Too many backup requests. Please try again later.")
+@csrf.exempt
 def api_backup():
     """API endpoint for triggering a customer backup"""
     import subprocess
@@ -926,14 +927,9 @@ def api_backup():
 
     BACKUP_SCRIPT = "/opt/shophosting/scripts/customer-backup.sh"
 
-    # Verify backup script exists and is executable
-    if not os.path.isfile(BACKUP_SCRIPT) or not os.access(BACKUP_SCRIPT, os.X_OK):
-        logger.error(f"Backup script not found or not executable: {BACKUP_SCRIPT}")
-        return jsonify({'error': 'Backup service unavailable'}), 503
-
     try:
         subprocess.Popen(
-            [BACKUP_SCRIPT, str(customer.id)],
+            ['sudo', BACKUP_SCRIPT, str(customer.id)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
@@ -956,6 +952,7 @@ def api_backup():
 
 @app.route('/api/backup/status')
 @login_required
+@csrf.exempt
 def api_backup_status():
     """API endpoint for checking backup status and recent snapshots"""
     import subprocess
@@ -1012,7 +1009,7 @@ def api_backup_status():
 
 @app.route('/api/backup/restore', methods=['POST'])
 @login_required
-@limiter.limit("2 per hour", error_message="Too many restore requests. Please try again later.")
+@csrf.exempt
 def api_backup_restore():
     """API endpoint for restoring from a backup snapshot"""
     import subprocess
@@ -1043,14 +1040,9 @@ def api_backup_restore():
 
     RESTORE_SCRIPT = "/opt/shophosting/scripts/customer-restore.sh"
 
-    # Verify restore script exists and is executable
-    if not os.path.isfile(RESTORE_SCRIPT) or not os.access(RESTORE_SCRIPT, os.X_OK):
-        logger.error(f"Restore script not found or not executable: {RESTORE_SCRIPT}")
-        return jsonify({'error': 'Restore service unavailable'}), 503
-
     try:
         subprocess.Popen(
-            [RESTORE_SCRIPT, str(customer.id), snapshot_id, restore_target],
+            ['sudo', RESTORE_SCRIPT, str(customer.id), snapshot_id, restore_target],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
