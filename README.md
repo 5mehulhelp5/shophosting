@@ -351,6 +351,142 @@ Edit `/opt/shophosting/scripts/backup.sh` to customize:
 
 **Important:** Keep `/root/.restic-password` safe - without it, backups cannot be restored.
 
+### Backrest Web UI (Recommended)
+
+[Backrest](https://github.com/garethgeorge/backrest) provides a web-based interface for managing and monitoring restic backups. It offers scheduling, retention policies, and easy restore capabilities through a user-friendly dashboard.
+
+#### Installing Backrest
+
+1. **Download and install Backrest:**
+   ```bash
+   # Download latest release (check https://github.com/garethgeorge/backrest/releases)
+   curl -L https://github.com/garethgeorge/backrest/releases/download/v1.11.1/backrest_Linux_x86_64.tar.gz | tar xz
+   sudo mv backrest /usr/local/bin/
+   sudo chmod +x /usr/local/bin/backrest
+   ```
+
+2. **Create configuration directory:**
+   ```bash
+   sudo mkdir -p /etc/backrest /var/lib/backrest
+   ```
+
+3. **Create initial configuration** (`/etc/backrest/config.json`):
+   ```json
+   {
+     "modno": 1,
+     "version": 4,
+     "instance": "shophosting",
+     "repos": [
+       {
+         "id": "shophosting-backup",
+         "uri": "sftp:user@backup-server:/path/to/backups",
+         "password": "your-base64-encoded-password",
+         "prunePolicy": {
+           "maxUnusedPercent": 25
+         },
+         "checkPolicy": {
+           "schedule": {
+             "cron": "0 0 * * 0"
+           },
+           "readDataSubsetPercent": 10
+         }
+       }
+     ],
+     "plans": [
+       {
+         "id": "daily-backup",
+         "repo": "shophosting-backup",
+         "paths": [
+           "/etc/letsencrypt",
+           "/etc/nginx/sites-available",
+           "/opt/shophosting/.env",
+           "/var/customers"
+         ],
+         "schedule": {
+           "cron": "0 2 * * *"
+         },
+         "retention": {
+           "policyKeepLastN": 7
+         }
+       }
+     ],
+     "auth": {
+       "disabled": true
+     }
+   }
+   ```
+
+4. **Install systemd service** (`/etc/systemd/system/backrest.service`):
+   ```ini
+   [Unit]
+   Description=Backrest Restic Web UI
+   After=network.target
+
+   [Service]
+   Type=simple
+   ExecStart=/usr/local/bin/backrest -config-file /etc/backrest/config.json -data-dir /var/lib/backrest -bind-address 127.0.0.1:9898
+   Restart=always
+   RestartSec=10
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+5. **Enable and start Backrest:**
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now backrest
+   ```
+
+6. **Configure Nginx reverse proxy** (add to your nginx config):
+   ```nginx
+   location /backrest/ {
+       proxy_pass http://127.0.0.1:9898/;
+       proxy_set_header Host $host;
+       proxy_set_header X-Real-IP $remote_addr;
+       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto $scheme;
+   }
+   ```
+
+#### Using Backrest UI
+
+Access the Backrest dashboard at `https://yourdomain.com/backrest/` (or directly at `http://localhost:9898` on the server).
+
+**Dashboard Overview:**
+- **Repos** - View repository status, storage usage, and run integrity checks
+- **Plans** - See backup schedules, trigger manual backups, view backup history
+- **Snapshots** - Browse all snapshots, view contents, restore files
+
+**Common Tasks:**
+
+| Task | How to do it |
+|------|--------------|
+| Run manual backup | Plans → Click "Backup Now" on your plan |
+| View backup history | Plans → Click plan name → See operation history |
+| Browse snapshot contents | Snapshots → Click snapshot ID → Browse files |
+| Restore files | Snapshots → Select snapshot → Browse → Click "Restore" |
+| Check repository health | Repos → Click "Check" button |
+| View backup logs | Click any operation → View detailed logs |
+
+**Retention Policies:**
+
+Configure retention in your plan's `retention` section:
+- `policyKeepLastN: 7` - Keep last 7 snapshots
+- `policyKeepDaily: 7` - Keep 7 daily snapshots
+- `policyKeepWeekly: 4` - Keep 4 weekly snapshots
+- `policyKeepMonthly: 12` - Keep 12 monthly snapshots
+
+#### Migrating from Systemd Timers to Backrest
+
+If you were using the systemd backup timers, disable them to avoid duplicate backups:
+
+```bash
+sudo systemctl disable --now shophosting-backup.timer shophosting-dir-backup.timer
+```
+
+Backrest will now manage all backup scheduling and retention.
+
 ## Architecture
 
 ```
