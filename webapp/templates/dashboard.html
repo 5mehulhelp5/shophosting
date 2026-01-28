@@ -457,6 +457,213 @@
         background: var(--error);
     }
 
+    /* Site Health */
+    .site-health-card {
+        margin-top: 24px;
+    }
+
+    .health-status-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px 28px;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .status-info {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .status-badge.running {
+        background: rgba(34, 197, 94, 0.15);
+        color: var(--success);
+    }
+
+    .status-badge.stopped {
+        background: rgba(239, 68, 68, 0.15);
+        color: var(--error);
+    }
+
+    .status-badge.restarting {
+        background: rgba(245, 158, 11, 0.15);
+        color: var(--warning);
+    }
+
+    .status-badge.unknown {
+        background: rgba(156, 163, 175, 0.15);
+        color: var(--text-secondary);
+    }
+
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: currentColor;
+    }
+
+    .uptime-text {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .restart-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 20px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-default);
+        border-radius: var(--radius-md);
+        color: var(--text-primary);
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .restart-btn:hover:not(:disabled) {
+        background: var(--bg-elevated);
+        border-color: var(--border-accent);
+    }
+
+    .restart-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .restart-btn.loading {
+        color: var(--warning);
+    }
+
+    .health-metrics {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        padding: 20px 28px;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .health-metrics iframe {
+        border-radius: var(--radius-md);
+        background: var(--bg-surface);
+    }
+
+    .logs-section {
+        padding: 0;
+    }
+
+    .logs-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 28px;
+        border-bottom: 1px solid var(--border-subtle);
+        cursor: pointer;
+    }
+
+    .logs-header:hover {
+        background: var(--bg-surface);
+    }
+
+    .logs-title {
+        font-size: 0.95rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+    }
+
+    .logs-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    .logs-toggle {
+        color: var(--text-muted);
+        transition: transform 0.2s ease;
+    }
+
+    .logs-toggle.expanded {
+        transform: rotate(180deg);
+    }
+
+    .logs-content {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+    }
+
+    .logs-content.expanded {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .logs-list {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.8rem;
+        padding: 16px 28px;
+        background: var(--bg-deep);
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+
+    .log-line {
+        padding: 2px 0;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .log-line:last-child {
+        border-bottom: none;
+    }
+
+    .logs-empty {
+        padding: 20px 28px;
+        color: var(--success);
+        text-align: center;
+    }
+
+    .help-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--bg-surface);
+        color: var(--text-muted);
+        font-size: 0.7rem;
+        cursor: help;
+        margin-left: 6px;
+    }
+
+    .help-icon:hover {
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
+    }
+
+    @media (max-width: 640px) {
+        .health-status-row {
+            flex-direction: column;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        .health-metrics {
+            grid-template-columns: 1fr;
+        }
+    }
+
     @media (max-width: 640px) {
         .info-row {
             flex-direction: column;
@@ -593,6 +800,59 @@
             </div>
         </div>
 
+        <!-- Site Health -->
+        <div class="info-card site-health-card">
+            <div class="info-card-header">
+                <h2 class="info-card-title">
+                    Site Health
+                    <span class="help-icon" title="Monitor your store's server status and restart if needed">?</span>
+                </h2>
+            </div>
+
+            <div class="health-status-row">
+                <div class="status-info">
+                    <span id="container-status" class="status-badge unknown">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Checking...</span>
+                    </span>
+                    <span id="container-uptime" class="uptime-text"></span>
+                </div>
+                <button id="restart-btn" class="restart-btn" onclick="restartContainer()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6"></path>
+                        <path d="M1 20v-6h6"></path>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                    <span>Restart Store</span>
+                    <span class="help-icon" title="Restarts your store's server. Use if your site is unresponsive. Takes ~30 seconds.">?</span>
+                </button>
+            </div>
+
+            <div class="health-metrics">
+                <iframe src="https://shophosting.io/grafana/d-solo/customer-metrics/customer-metrics?orgId=1&var-customer_id={{ customer.id }}&panelId=5&theme=dark"
+                        width="100%" height="80" frameborder="0" title="CPU Usage"></iframe>
+                <iframe src="https://shophosting.io/grafana/d-solo/customer-metrics/customer-metrics?orgId=1&var-customer_id={{ customer.id }}&panelId=6&theme=dark"
+                        width="100%" height="80" frameborder="0" title="Memory Usage"></iframe>
+                <iframe src="https://shophosting.io/grafana/d-solo/customer-metrics/customer-metrics?orgId=1&var-customer_id={{ customer.id }}&panelId=7&theme=dark"
+                        width="100%" height="80" frameborder="0" title="Requests/sec"></iframe>
+            </div>
+
+            <div class="logs-section">
+                <div class="logs-header" onclick="toggleLogs()">
+                    <span class="logs-title">Recent Logs</span>
+                    <div class="logs-actions">
+                        <button class="btn btn-sm" onclick="event.stopPropagation(); refreshLogs()">Refresh</button>
+                        <svg id="logs-toggle" class="logs-toggle" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </div>
+                </div>
+                <div id="logs-content" class="logs-content">
+                    <div id="logs-list" class="logs-list">Loading logs...</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Resource Usage -->
         <div class="info-card resource-usage-card">
             <div class="info-card-header">
@@ -706,6 +966,154 @@
 
     // Check status every 5 seconds
     setInterval(checkStatus, 5000);
+</script>
+{% endif %}
+
+{% if customer.status == 'active' and credentials %}
+<script nonce="{{ csp_nonce() }}">
+    // Site Health Functions
+    let restartCooldown = false;
+    let logsExpanded = false;
+
+    // Fetch container status
+    async function fetchContainerStatus() {
+        try {
+            const response = await fetch('/api/container/status');
+            const data = await response.json();
+
+            const statusEl = document.getElementById('container-status');
+            const uptimeEl = document.getElementById('container-uptime');
+            const statusText = statusEl.querySelector('.status-text');
+
+            // Update status badge
+            statusEl.className = 'status-badge ' + (data.running ? 'running' :
+                data.status === 'restarting' ? 'restarting' :
+                data.status === 'exited' ? 'stopped' : 'unknown');
+
+            statusText.textContent = data.running ? 'Running' :
+                data.status === 'restarting' ? 'Restarting...' :
+                data.status === 'exited' ? 'Stopped' : 'Unknown';
+
+            // Update uptime
+            if (data.uptime) {
+                uptimeEl.textContent = 'Uptime: ' + data.uptime;
+            } else {
+                uptimeEl.textContent = '';
+            }
+
+        } catch (error) {
+            console.error('Failed to fetch status:', error);
+            document.getElementById('container-status').className = 'status-badge unknown';
+            document.querySelector('.status-text').textContent = 'Error';
+        }
+    }
+
+    // Restart container
+    async function restartContainer() {
+        if (restartCooldown) {
+            alert('Please wait 5 minutes between restarts.');
+            return;
+        }
+
+        if (!confirm('Are you sure you want to restart your store? It will be unavailable for ~30 seconds.')) {
+            return;
+        }
+
+        const btn = document.getElementById('restart-btn');
+        btn.disabled = true;
+        btn.classList.add('loading');
+        const btnText = btn.querySelector('span:not(.help-icon)');
+        btnText.textContent = 'Restarting...';
+
+        try {
+            const response = await fetch('/api/container/restart', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                alert(data.message);
+                restartCooldown = true;
+                setTimeout(() => {
+                    restartCooldown = false;
+                    btn.disabled = false;
+                    btnText.textContent = 'Restart Store';
+                }, 300000); // 5 minutes
+
+                // Poll status more frequently after restart
+                setTimeout(fetchContainerStatus, 5000);
+                setTimeout(fetchContainerStatus, 15000);
+                setTimeout(fetchContainerStatus, 30000);
+            } else {
+                alert('Restart failed: ' + data.message);
+                btn.disabled = false;
+                btnText.textContent = 'Restart Store';
+            }
+        } catch (error) {
+            alert('Failed to restart: ' + error.message);
+            btn.disabled = false;
+            btnText.textContent = 'Restart Store';
+        }
+
+        btn.classList.remove('loading');
+    }
+
+    // Toggle logs visibility
+    function toggleLogs() {
+        const content = document.getElementById('logs-content');
+        const toggle = document.getElementById('logs-toggle');
+        logsExpanded = !logsExpanded;
+
+        content.classList.toggle('expanded', logsExpanded);
+        toggle.classList.toggle('expanded', logsExpanded);
+
+        if (logsExpanded) {
+            refreshLogs();
+        }
+    }
+
+    // Fetch logs - uses safe DOM methods to prevent XSS
+    async function refreshLogs() {
+        const logsEl = document.getElementById('logs-list');
+        logsEl.textContent = 'Loading logs...';
+
+        try {
+            const response = await fetch('/api/container/logs?lines=50');
+            const data = await response.json();
+
+            // Clear existing content
+            logsEl.textContent = '';
+
+            if (data.logs && data.logs.length > 0) {
+                // Use safe DOM methods instead of innerHTML
+                data.logs.forEach(line => {
+                    const lineDiv = document.createElement('div');
+                    lineDiv.className = 'log-line';
+                    lineDiv.textContent = line;
+                    logsEl.appendChild(lineDiv);
+                });
+            } else {
+                const emptyDiv = document.createElement('div');
+                emptyDiv.className = 'logs-empty';
+                emptyDiv.textContent = 'No recent errors - your site is running smoothly!';
+                logsEl.appendChild(emptyDiv);
+            }
+        } catch (error) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'log-line';
+            errorDiv.style.color = 'var(--error)';
+            errorDiv.textContent = 'Failed to load logs: ' + error.message;
+            logsEl.textContent = '';
+            logsEl.appendChild(errorDiv);
+        }
+    }
+
+    // Initialize
+    fetchContainerStatus();
+    setInterval(fetchContainerStatus, 10000); // Poll every 10 seconds
 </script>
 {% endif %}
 {% endblock %}

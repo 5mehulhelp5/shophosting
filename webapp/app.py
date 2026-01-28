@@ -902,6 +902,180 @@ def api_status():
     })
 
 
+@app.route('/api/container/status')
+@login_required
+def api_container_status():
+    """Get container status for current customer"""
+    import subprocess
+
+    customer = Customer.get_by_id(current_user.id)
+
+    if customer.status != 'active':
+        return jsonify({'error': 'Store not active'}), 400
+
+    # Determine container name based on platform
+    if customer.platform == 'magento':
+        container_name = f"customer-{customer.id}-magento"
+    else:
+        container_name = f"customer-{customer.id}-wordpress"
+
+    try:
+        # Get container status
+        result = subprocess.run(
+            ['docker', 'inspect', container_name, '--format',
+             '{{.State.Status}} {{.State.Running}} {{.State.StartedAt}}'],
+            capture_output=True, text=True, timeout=10
+        )
+
+        if result.returncode != 0:
+            return jsonify({
+                'status': 'unknown',
+                'running': False,
+                'uptime': None,
+                'message': 'Container not found'
+            })
+
+        parts = result.stdout.strip().split()
+        status = parts[0] if parts else 'unknown'
+        running = parts[1].lower() == 'true' if len(parts) > 1 else False
+        started_at = parts[2] if len(parts) > 2 else None
+
+        # Calculate uptime
+        uptime_str = None
+        if started_at and running:
+            from datetime import datetime
+            try:
+                # Docker returns ISO format with timezone
+                started = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                now = datetime.now(started.tzinfo)
+                delta = now - started
+                days = delta.days
+                hours, remainder = divmod(delta.seconds, 3600)
+                minutes, _ = divmod(remainder, 60)
+                uptime_str = f"{days}d {hours}h {minutes}m"
+            except:
+                uptime_str = "unknown"
+
+        return jsonify({
+            'status': status,
+            'running': running,
+            'uptime': uptime_str,
+            'container_name': container_name
+        })
+
+    except subprocess.TimeoutExpired:
+        return jsonify({'status': 'timeout', 'running': False, 'uptime': None}), 504
+    except Exception as e:
+        return jsonify({'status': 'error', 'running': False, 'message': str(e)}), 500
+
+
+@app.route('/api/container/restart', methods=['POST'])
+@login_required
+@limiter.limit("1 per 5 minutes", error_message="Please wait 5 minutes between restarts.")
+@csrf.exempt
+def api_container_restart():
+    """Restart container for current customer"""
+    import subprocess
+
+    customer = Customer.get_by_id(current_user.id)
+
+    if customer.status != 'active':
+        return jsonify({'error': 'Store not active'}), 400
+
+    # Determine container name based on platform
+    if customer.platform == 'magento':
+        container_name = f"customer-{customer.id}-magento"
+    else:
+        container_name = f"customer-{customer.id}-wordpress"
+
+    try:
+        # Restart the container
+        result = subprocess.run(
+            ['docker', 'restart', container_name],
+            capture_output=True, text=True, timeout=60
+        )
+
+        if result.returncode != 0:
+            return jsonify({
+                'success': False,
+                'message': f'Restart failed: {result.stderr}'
+            }), 500
+
+        return jsonify({
+            'success': True,
+            'message': 'Container restart initiated. Your store will be back online in ~30 seconds.'
+        })
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            'success': False,
+            'message': 'Restart timed out. Please try again or contact support.'
+        }), 504
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+
+@app.route('/api/container/logs')
+@login_required
+@limiter.limit("30 per minute")
+def api_container_logs():
+    """Get recent container logs for current customer"""
+    import subprocess
+    import re
+
+    customer = Customer.get_by_id(current_user.id)
+
+    if customer.status != 'active':
+        return jsonify({'error': 'Store not active'}), 400
+
+    # Determine container name based on platform
+    if customer.platform == 'magento':
+        container_name = f"customer-{customer.id}-magento"
+    else:
+        container_name = f"customer-{customer.id}-wordpress"
+
+    lines = request.args.get('lines', 50, type=int)
+    lines = min(lines, 100)  # Cap at 100 lines
+
+    try:
+        result = subprocess.run(
+            ['docker', 'logs', container_name, '--tail', str(lines), '--timestamps'],
+            capture_output=True, text=True, timeout=30
+        )
+
+        # Combine stdout and stderr (logs can be in either)
+        logs = result.stdout + result.stderr
+
+        # Sanitize sensitive data
+        patterns_to_redact = [
+            (r'password["\s:=]+[^\s"]+', 'password=***REDACTED***'),
+            (r'api[_-]?key["\s:=]+[^\s"]+', 'api_key=***REDACTED***'),
+            (r'secret["\s:=]+[^\s"]+', 'secret=***REDACTED***'),
+            (r'token["\s:=]+[^\s"]+', 'token=***REDACTED***'),
+            (r'Authorization:\s*\S+', 'Authorization: ***REDACTED***'),
+        ]
+
+        for pattern, replacement in patterns_to_redact:
+            logs = re.sub(pattern, replacement, logs, flags=re.IGNORECASE)
+
+        # Split into lines and return
+        log_lines = logs.strip().split('\n') if logs.strip() else []
+
+        return jsonify({
+            'logs': log_lines,
+            'container_name': container_name,
+            'line_count': len(log_lines)
+        })
+
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Log retrieval timed out'}), 504
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/credentials')
 @login_required
 def api_credentials():
