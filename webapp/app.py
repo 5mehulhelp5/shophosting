@@ -902,6 +902,73 @@ def api_status():
     })
 
 
+@app.route('/api/container/status')
+@login_required
+def api_container_status():
+    """Get container status for current customer"""
+    import subprocess
+
+    customer = Customer.get_by_id(current_user.id)
+
+    if customer.status != 'active':
+        return jsonify({'error': 'Store not active'}), 400
+
+    # Determine container name based on platform
+    if customer.platform == 'magento':
+        container_name = f"customer-{customer.id}-magento"
+    else:
+        container_name = f"customer-{customer.id}-wordpress"
+
+    try:
+        # Get container status
+        result = subprocess.run(
+            ['docker', 'inspect', container_name, '--format',
+             '{{.State.Status}} {{.State.Running}} {{.State.StartedAt}}'],
+            capture_output=True, text=True, timeout=10
+        )
+
+        if result.returncode != 0:
+            return jsonify({
+                'status': 'unknown',
+                'running': False,
+                'uptime': None,
+                'message': 'Container not found'
+            })
+
+        parts = result.stdout.strip().split()
+        status = parts[0] if parts else 'unknown'
+        running = parts[1].lower() == 'true' if len(parts) > 1 else False
+        started_at = parts[2] if len(parts) > 2 else None
+
+        # Calculate uptime
+        uptime_str = None
+        if started_at and running:
+            from datetime import datetime
+            try:
+                # Docker returns ISO format with timezone
+                started = datetime.fromisoformat(started_at.replace('Z', '+00:00'))
+                now = datetime.now(started.tzinfo)
+                delta = now - started
+                days = delta.days
+                hours, remainder = divmod(delta.seconds, 3600)
+                minutes, _ = divmod(remainder, 60)
+                uptime_str = f"{days}d {hours}h {minutes}m"
+            except:
+                uptime_str = "unknown"
+
+        return jsonify({
+            'status': status,
+            'running': running,
+            'uptime': uptime_str,
+            'container_name': container_name
+        })
+
+    except subprocess.TimeoutExpired:
+        return jsonify({'status': 'timeout', 'running': False, 'uptime': None}), 504
+    except Exception as e:
+        return jsonify({'status': 'error', 'running': False, 'message': str(e)}), 500
+
+
 @app.route('/api/credentials')
 @login_required
 def api_credentials():
