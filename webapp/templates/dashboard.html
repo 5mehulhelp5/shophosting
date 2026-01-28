@@ -817,7 +817,7 @@
                     </span>
                     <span id="container-uptime" class="uptime-text"></span>
                 </div>
-                <button id="restart-btn" class="restart-btn" onclick="restartContainer()">
+                <button id="restart-btn" class="restart-btn">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M23 4v6h-6"></path>
                         <path d="M1 20v-6h6"></path>
@@ -838,10 +838,10 @@
             </div>
 
             <div class="logs-section">
-                <div class="logs-header" onclick="toggleLogs()">
+                <div id="logs-header" class="logs-header">
                     <span class="logs-title">Recent Logs</span>
                     <div class="logs-actions">
-                        <button class="btn btn-sm" onclick="event.stopPropagation(); refreshLogs()">Refresh</button>
+                        <button id="refresh-logs-btn" class="btn btn-sm">Refresh</button>
                         <svg id="logs-toggle" class="logs-toggle" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="6 9 12 15 18 9"></polyline>
                         </svg>
@@ -978,8 +978,24 @@
     // Fetch container status
     async function fetchContainerStatus() {
         try {
-            const response = await fetch('/api/container/status');
+            const response = await fetch('/api/container/status', {
+                credentials: 'same-origin'
+            });
+
+            // Check if response is JSON
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                const text = await response.text();
+                console.error('Non-JSON response - Status:', response.status, 'Type:', contentType, 'Body:', text.substring(0, 200));
+                throw new Error('Status ' + response.status + ', Type: ' + contentType);
+            }
+
             const data = await response.json();
+
+            if (!response.ok) {
+                console.error('API error:', response.status, data);
+                throw new Error(data.error || 'API request failed');
+            }
 
             const statusEl = document.getElementById('container-status');
             const uptimeEl = document.getElementById('container-uptime');
@@ -1114,6 +1130,14 @@
     // Initialize
     fetchContainerStatus();
     setInterval(fetchContainerStatus, 10000); // Poll every 10 seconds
+
+    // Event listeners (CSP-compliant, no inline handlers)
+    document.getElementById('restart-btn').addEventListener('click', restartContainer);
+    document.getElementById('logs-header').addEventListener('click', toggleLogs);
+    document.getElementById('refresh-logs-btn').addEventListener('click', function(e) {
+        e.stopPropagation();
+        refreshLogs();
+    });
 </script>
 {% endif %}
 {% endblock %}
