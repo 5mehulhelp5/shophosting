@@ -978,8 +978,23 @@
     // Fetch container status
     async function fetchContainerStatus() {
         try {
-            const response = await fetch('/api/container/status');
+            const response = await fetch('/api/container/status', {
+                credentials: 'same-origin'
+            });
+
+            // Check if response is JSON
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                console.error('Non-JSON response:', response.status, contentType);
+                throw new Error('Server returned non-JSON response');
+            }
+
             const data = await response.json();
+
+            if (!response.ok) {
+                console.error('API error:', response.status, data);
+                throw new Error(data.error || 'API request failed');
+            }
 
             const statusEl = document.getElementById('container-status');
             const uptimeEl = document.getElementById('container-uptime');
