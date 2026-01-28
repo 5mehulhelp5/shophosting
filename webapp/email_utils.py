@@ -189,6 +189,78 @@ def send_consultation_confirmation(appointment):
     )
 
 
+def send_monitoring_alert(customer, alert):
+    """
+    Send monitoring alert email to admin.
+
+    Args:
+        customer: Customer object
+        alert: MonitoringAlert object
+
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    admin_email = os.getenv('ADMIN_ALERT_EMAIL', os.getenv('ADMIN_EMAIL'))
+    if not admin_email:
+        return False, "No admin alert email configured"
+
+    # Map alert types to colors and emojis
+    alert_config = {
+        'down': {'color': '#ef4444', 'emoji': '&#128308;', 'bg': '#fef2f2'},
+        'degraded': {'color': '#f59e0b', 'emoji': '&#128993;', 'bg': '#fffbeb'},
+        'recovered': {'color': '#22c55e', 'emoji': '&#128994;', 'bg': '#f0fdf4'},
+        'resource_warning': {'color': '#f59e0b', 'emoji': '&#9888;', 'bg': '#fffbeb'}
+    }
+    config = alert_config.get(alert.alert_type, alert_config['down'])
+
+    subject = f"[{alert.alert_type.upper()}] {alert.message}"
+
+    html_body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; background: #f4f4f4; padding: 20px;">
+        <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <div style="background: {config['color']}; color: white; padding: 20px; text-align: center;">
+                <h1 style="margin: 0; font-size: 24px;">{config['emoji']} Monitoring Alert</h1>
+            </div>
+            <div style="padding: 30px;">
+                <div style="background: {config['bg']}; border-left: 4px solid {config['color']}; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                    <strong style="font-size: 18px;">{alert.message}</strong>
+                </div>
+
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                    <tr>
+                        <td style="padding: 10px; border-bottom: 1px solid #eee; color: #666;">Customer</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>{customer.company_name or customer.email}</strong></td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px; border-bottom: 1px solid #eee; color: #666;">Domain</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><a href="https://{customer.domain}" style="color: #0088ff;">{customer.domain}</a></td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px; border-bottom: 1px solid #eee; color: #666;">Alert Type</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #eee;"><span style="background: {config['bg']}; color: {config['color']}; padding: 4px 12px; border-radius: 12px; font-weight: 600; text-transform: uppercase; font-size: 12px;">{alert.alert_type}</span></td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px; border-bottom: 1px solid #eee; color: #666;">Time</td>
+                        <td style="padding: 10px; border-bottom: 1px solid #eee;">{alert.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC</td>
+                    </tr>
+                </table>
+
+                <div style="text-align: center; margin-top: 30px;">
+                    <a href="https://shophosting.io/admin/monitoring/{customer.id}" style="display: inline-block; background: #0088ff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600;">View in Admin Panel</a>
+                </div>
+            </div>
+            <div style="background: #f9f9f9; padding: 15px; text-align: center; color: #666; font-size: 12px;">
+                ShopHosting.io Monitoring System
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    return send_email(admin_email, subject, html_body)
+
+
 def send_consultation_notification_to_sales(appointment):
     """
     Send notification to sales team about new consultation booking.
