@@ -220,7 +220,8 @@ def ratelimit_handler(e):
         f"endpoint={request.endpoint} "
         f"user_agent={request.user_agent.string[:100]}"
     )
-    if request.is_json:
+    # Return JSON for API endpoints or JSON requests
+    if request.is_json or request.path.startswith('/api/'):
         return jsonify({
             'error': 'Rate limit exceeded',
             'message': 'Too many requests. Please try again later.',
@@ -904,6 +905,7 @@ def api_status():
 
 @app.route('/api/container/status')
 @login_required
+@limiter.limit("60 per minute")  # Allow frequent polling
 def api_container_status():
     """Get container status for current customer"""
     import subprocess
