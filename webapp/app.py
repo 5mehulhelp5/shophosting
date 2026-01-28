@@ -910,14 +910,14 @@ def api_container_status():
 
     customer = Customer.get_by_id(current_user.id)
 
-    if customer.status != 'active':
-        return jsonify({'error': 'Store not active'}), 400
+    if not customer:
+        return jsonify({'error': 'Customer not found', 'status': 'error', 'running': False}), 404
 
-    # Determine container name based on platform
-    if customer.platform == 'magento':
-        container_name = f"customer-{customer.id}-magento"
-    else:
-        container_name = f"customer-{customer.id}-wordpress"
+    if customer.status != 'active':
+        return jsonify({'error': 'Store not active', 'status': 'error', 'running': False}), 400
+
+    # Container name follows pattern: customer-{id}-web
+    container_name = f"customer-{customer.id}-web"
 
     try:
         # Get container status
@@ -979,14 +979,14 @@ def api_container_restart():
 
     customer = Customer.get_by_id(current_user.id)
 
-    if customer.status != 'active':
-        return jsonify({'error': 'Store not active'}), 400
+    if not customer:
+        return jsonify({'success': False, 'message': 'Customer not found'}), 404
 
-    # Determine container name based on platform
-    if customer.platform == 'magento':
-        container_name = f"customer-{customer.id}-magento"
-    else:
-        container_name = f"customer-{customer.id}-wordpress"
+    if customer.status != 'active':
+        return jsonify({'success': False, 'message': 'Store not active'}), 400
+
+    # Container name follows pattern: customer-{id}-web
+    container_name = f"customer-{customer.id}-web"
 
     try:
         # Restart the container
@@ -1028,14 +1028,14 @@ def api_container_logs():
 
     customer = Customer.get_by_id(current_user.id)
 
-    if customer.status != 'active':
-        return jsonify({'error': 'Store not active'}), 400
+    if not customer:
+        return jsonify({'error': 'Customer not found', 'logs': []}), 404
 
-    # Determine container name based on platform
-    if customer.platform == 'magento':
-        container_name = f"customer-{customer.id}-magento"
-    else:
-        container_name = f"customer-{customer.id}-wordpress"
+    if customer.status != 'active':
+        return jsonify({'error': 'Store not active', 'logs': []}), 400
+
+    # Container name follows pattern: customer-{id}-web
+    container_name = f"customer-{customer.id}-web"
 
     lines = request.args.get('lines', 50, type=int)
     lines = min(lines, 100)  # Cap at 100 lines
