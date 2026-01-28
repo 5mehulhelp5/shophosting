@@ -1018,6 +1018,64 @@ def api_container_restart():
         }), 500
 
 
+@app.route('/api/container/logs')
+@login_required
+@limiter.limit("30 per minute")
+def api_container_logs():
+    """Get recent container logs for current customer"""
+    import subprocess
+    import re
+
+    customer = Customer.get_by_id(current_user.id)
+
+    if customer.status != 'active':
+        return jsonify({'error': 'Store not active'}), 400
+
+    # Determine container name based on platform
+    if customer.platform == 'magento':
+        container_name = f"customer-{customer.id}-magento"
+    else:
+        container_name = f"customer-{customer.id}-wordpress"
+
+    lines = request.args.get('lines', 50, type=int)
+    lines = min(lines, 100)  # Cap at 100 lines
+
+    try:
+        result = subprocess.run(
+            ['docker', 'logs', container_name, '--tail', str(lines), '--timestamps'],
+            capture_output=True, text=True, timeout=30
+        )
+
+        # Combine stdout and stderr (logs can be in either)
+        logs = result.stdout + result.stderr
+
+        # Sanitize sensitive data
+        patterns_to_redact = [
+            (r'password["\s:=]+[^\s"]+', 'password=***REDACTED***'),
+            (r'api[_-]?key["\s:=]+[^\s"]+', 'api_key=***REDACTED***'),
+            (r'secret["\s:=]+[^\s"]+', 'secret=***REDACTED***'),
+            (r'token["\s:=]+[^\s"]+', 'token=***REDACTED***'),
+            (r'Authorization:\s*\S+', 'Authorization: ***REDACTED***'),
+        ]
+
+        for pattern, replacement in patterns_to_redact:
+            logs = re.sub(pattern, replacement, logs, flags=re.IGNORECASE)
+
+        # Split into lines and return
+        log_lines = logs.strip().split('\n') if logs.strip() else []
+
+        return jsonify({
+            'logs': log_lines,
+            'container_name': container_name,
+            'line_count': len(log_lines)
+        })
+
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': 'Log retrieval timed out'}), 504
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/credentials')
 @login_required
 def api_credentials():
