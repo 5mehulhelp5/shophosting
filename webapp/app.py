@@ -969,6 +969,55 @@ def api_container_status():
         return jsonify({'status': 'error', 'running': False, 'message': str(e)}), 500
 
 
+@app.route('/api/container/restart', methods=['POST'])
+@login_required
+@limiter.limit("1 per 5 minutes", error_message="Please wait 5 minutes between restarts.")
+@csrf.exempt
+def api_container_restart():
+    """Restart container for current customer"""
+    import subprocess
+
+    customer = Customer.get_by_id(current_user.id)
+
+    if customer.status != 'active':
+        return jsonify({'error': 'Store not active'}), 400
+
+    # Determine container name based on platform
+    if customer.platform == 'magento':
+        container_name = f"customer-{customer.id}-magento"
+    else:
+        container_name = f"customer-{customer.id}-wordpress"
+
+    try:
+        # Restart the container
+        result = subprocess.run(
+            ['docker', 'restart', container_name],
+            capture_output=True, text=True, timeout=60
+        )
+
+        if result.returncode != 0:
+            return jsonify({
+                'success': False,
+                'message': f'Restart failed: {result.stderr}'
+            }), 500
+
+        return jsonify({
+            'success': True,
+            'message': 'Container restart initiated. Your store will be back online in ~30 seconds.'
+        })
+
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            'success': False,
+            'message': 'Restart timed out. Please try again or contact support.'
+        }), 504
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+
 @app.route('/api/credentials')
 @login_required
 def api_credentials():
