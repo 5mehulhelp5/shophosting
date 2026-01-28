@@ -913,11 +913,8 @@ def api_container_status():
     if customer.status != 'active':
         return jsonify({'error': 'Store not active'}), 400
 
-    # Determine container name based on platform
-    if customer.platform == 'magento':
-        container_name = f"customer-{customer.id}-magento"
-    else:
-        container_name = f"customer-{customer.id}-wordpress"
+    # Container name follows pattern: customer-{id}-web
+    container_name = f"customer-{customer.id}-web"
 
     try:
         # Get container status
@@ -982,11 +979,8 @@ def api_container_restart():
     if customer.status != 'active':
         return jsonify({'error': 'Store not active'}), 400
 
-    # Determine container name based on platform
-    if customer.platform == 'magento':
-        container_name = f"customer-{customer.id}-magento"
-    else:
-        container_name = f"customer-{customer.id}-wordpress"
+    # Container name follows pattern: customer-{id}-web
+    container_name = f"customer-{customer.id}-web"
 
     try:
         # Restart the container
@@ -1031,11 +1025,8 @@ def api_container_logs():
     if customer.status != 'active':
         return jsonify({'error': 'Store not active'}), 400
 
-    # Determine container name based on platform
-    if customer.platform == 'magento':
-        container_name = f"customer-{customer.id}-magento"
-    else:
-        container_name = f"customer-{customer.id}-wordpress"
+    # Container name follows pattern: customer-{id}-web
+    container_name = f"customer-{customer.id}-web"
 
     lines = request.args.get('lines', 50, type=int)
     lines = min(lines, 100)  # Cap at 100 lines
