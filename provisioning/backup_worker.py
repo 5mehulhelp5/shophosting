@@ -17,16 +17,23 @@ from dotenv import load_dotenv
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('/opt/shophosting/logs/backup_worker.log'),
-        logging.StreamHandler()
-    ]
-)
+# Configure logging - only add file handler when running as worker
+# When imported by webapp, just use basic console logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Add console handler if no handlers exist
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(console_handler)
+
+
+def _configure_file_logging():
+    """Configure file logging for worker mode"""
+    file_handler = logging.FileHandler('/opt/shophosting/logs/backup_worker.log')
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(file_handler)
 
 
 class BackupError(Exception):
@@ -68,7 +75,14 @@ class BackupWorker:
             )
 
             if result.returncode != 0:
-                raise BackupError(f"Backup script failed: {result.stderr}")
+                # Combine stdout and stderr for error message since script logs to stdout
+                error_output = result.stderr or result.stdout or 'Unknown error'
+                # Extract the last ERROR line if present
+                for line in reversed(error_output.split('\n')):
+                    if 'ERROR:' in line:
+                        error_output = line.split('ERROR:')[-1].strip()
+                        break
+                raise BackupError(f"Backup failed: {error_output}")
 
             # Extract snapshot ID from output
             snapshot_id = None
@@ -185,6 +199,9 @@ if __name__ == '__main__':
     # Run as RQ worker
     from redis import Redis
     from rq import Worker, Queue
+
+    # Enable file logging when running as worker
+    _configure_file_logging()
 
     redis_host = os.getenv('REDIS_HOST', 'localhost')
     redis_conn = Redis(host=redis_host, port=6379)

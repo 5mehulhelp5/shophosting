@@ -163,6 +163,30 @@
         color: var(--text-primary);
     }
 
+    .status-banner.failed {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        color: #ef4444;
+    }
+
+    .failed-icon {
+        font-size: 1.2rem;
+    }
+
+    .dismiss-btn {
+        margin-left: auto;
+        background: none;
+        border: none;
+        color: inherit;
+        cursor: pointer;
+        font-size: 1rem;
+        opacity: 0.7;
+    }
+
+    .dismiss-btn:hover {
+        opacity: 1;
+    }
+
     .spinner {
         width: 20px;
         height: 20px;
@@ -252,6 +276,21 @@
                 Restoring from backup...
             {% endif %}
         </span>
+    </div>
+    {% endif %}
+
+    {% set most_recent_job = recent_jobs[0] if recent_jobs else none %}
+    {% if most_recent_job and most_recent_job.status == 'failed' and not active_job %}
+    <div class="status-banner failed" id="failed-banner">
+        <span class="failed-icon">&#10006;</span>
+        <span>
+            {% if most_recent_job.job_type == 'backup' %}
+                Backup failed{% if most_recent_job.error_message %}: {{ most_recent_job.error_message[:100] }}{% endif %}
+            {% else %}
+                Restore failed{% if most_recent_job.error_message %}: {{ most_recent_job.error_message[:100] }}{% endif %}
+            {% endif %}
+        </span>
+        <button class="dismiss-btn" onclick="this.parentElement.remove()">&#10005;</button>
     </div>
     {% endif %}
 
@@ -513,7 +552,42 @@ setInterval(async () => {
         const data = await response.json();
 
         if (!data.has_active_job) {
-            location.reload();
+            // Check if there was a failure
+            if (data.last_failed) {
+                const banner = document.getElementById('status-banner');
+                if (banner) {
+                    banner.className = 'status-banner failed';
+                    // Clear existing content safely
+                    banner.textContent = '';
+
+                    const icon = document.createElement('span');
+                    icon.className = 'failed-icon';
+                    icon.textContent = '\u2716';
+
+                    const msg = document.createElement('span');
+                    const jobType = data.last_failed.job_type === 'backup' ? 'Backup' : 'Restore';
+                    const errorMsg = data.last_failed.error_message || 'Unknown error';
+                    msg.textContent = jobType + ' failed: ' + errorMsg.substring(0, 100);
+
+                    const dismissBtn = document.createElement('button');
+                    dismissBtn.className = 'dismiss-btn';
+                    dismissBtn.textContent = '\u2715';
+                    dismissBtn.onclick = () => location.reload();
+
+                    banner.appendChild(icon);
+                    banner.appendChild(msg);
+                    banner.appendChild(dismissBtn);
+
+                    // Re-enable the create backup button
+                    const btn = document.getElementById('create-backup-btn');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = 'Create Backup';
+                    }
+                }
+            } else {
+                location.reload();
+            }
         }
     } catch (err) {
         console.error('Status poll failed:', err);

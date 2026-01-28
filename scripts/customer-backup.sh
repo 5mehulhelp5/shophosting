@@ -22,8 +22,11 @@ DB_DUMP_DIR="/tmp/customer-backup-${CUSTOMER_ID}"
 MAX_BACKUPS=5
 TIMESTAMP=$(date +%Y-%m-%d-%H%M%S)
 
-# Load environment
-source /opt/shophosting/.env
+# Load environment variables safely (handle special characters in values)
+ENV_FILE="/opt/shophosting/.env"
+DB_HOST=$(grep -E "^DB_HOST=" "$ENV_FILE" | cut -d= -f2-)
+DB_USER=$(grep -E "^DB_USER=" "$ENV_FILE" | cut -d= -f2-)
+DB_PASSWORD=$(grep -E "^DB_PASSWORD=" "$ENV_FILE" | cut -d= -f2-)
 
 # Export for restic
 export RESTIC_REPOSITORY
@@ -57,13 +60,27 @@ if [ "$BACKUP_TYPE" = "db" ] || [ "$BACKUP_TYPE" = "both" ]; then
     mkdir -p "$DB_DUMP_DIR"
     rm -f "$DB_DUMP_DIR"/*.sql
 
-    # Get customer database name (customer_ID format)
+    # Customer database runs in Docker container
+    CONTAINER_NAME="customer-${CUSTOMER_ID}-db"
     CUSTOMER_DB="customer_${CUSTOMER_ID}"
 
-    # Dump the database
-    mysqldump -h "${DB_HOST:-localhost}" \
-        -u "${DB_USER:-shophosting_app}" \
-        -p"${DB_PASSWORD}" \
+    # Get MySQL root password from docker-compose.yml
+    COMPOSE_FILE="${CUSTOMER_PATH}/docker-compose.yml"
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        error_exit "Docker compose file not found: $COMPOSE_FILE"
+    fi
+
+    MYSQL_ROOT_PASSWORD=$(grep -A1 "MYSQL_ROOT_PASSWORD:" "$COMPOSE_FILE" | head -1 | sed 's/.*: *"\?\([^"]*\)"\?/\1/' | tr -d ' "')
+
+    # Check if container is running
+    if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        error_exit "Database container not running: $CONTAINER_NAME"
+    fi
+
+    # Dump the database from inside the container
+    docker exec "$CONTAINER_NAME" mysqldump \
+        -u root \
+        -p"${MYSQL_ROOT_PASSWORD}" \
         --single-transaction \
         "$CUSTOMER_DB" > "$DB_DUMP_DIR/${CUSTOMER_DB}.sql" 2>/dev/null \
         || error_exit "Failed to dump database $CUSTOMER_DB"

@@ -1051,7 +1051,16 @@ def backup_status():
             'job': active_job.to_dict()
         })
     else:
-        return jsonify({'has_active_job': False})
+        # Check for recently failed job to show error
+        recent_jobs = CustomerBackupJob.get_recent_jobs(customer.id, limit=1)
+        last_failed = None
+        if recent_jobs and recent_jobs[0].status == 'failed':
+            last_failed = recent_jobs[0].to_dict()
+
+        return jsonify({
+            'has_active_job': False,
+            'last_failed': last_failed
+        })
 
 
 def get_customer_manual_backups(customer_id, limit=5):
@@ -1068,6 +1077,8 @@ def get_customer_manual_backups(customer_id, limit=5):
             text=True,
             timeout=30
         )
+
+        logger.info(f"Manual backup list for customer {customer_id}: returncode={result.returncode}, stdout_len={len(result.stdout)}, stderr={result.stderr[:200] if result.stderr else 'none'}")
 
         if result.returncode == 0 and result.stdout.strip():
             import json

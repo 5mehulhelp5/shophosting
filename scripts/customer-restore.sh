@@ -29,8 +29,11 @@ CUSTOMER_PATH="/var/customers/customer-${CUSTOMER_ID}"
 RESTORE_DIR="/tmp/restore-customer-${CUSTOMER_ID}-$(date +%s)"
 MAINTENANCE_FILE="${CUSTOMER_PATH}/.maintenance"
 
-# Load environment
-source /opt/shophosting/.env
+# Load environment variables safely (handle special characters in values)
+ENV_FILE="/opt/shophosting/.env"
+DB_HOST=$(grep -E "^DB_HOST=" "$ENV_FILE" | cut -d= -f2-)
+DB_USER=$(grep -E "^DB_USER=" "$ENV_FILE" | cut -d= -f2-)
+DB_PASSWORD=$(grep -E "^DB_PASSWORD=" "$ENV_FILE" | cut -d= -f2-)
 
 # Export for restic
 export RESTIC_REPOSITORY
