@@ -910,8 +910,11 @@ def api_container_status():
 
     customer = Customer.get_by_id(current_user.id)
 
+    if not customer:
+        return jsonify({'error': 'Customer not found', 'status': 'error', 'running': False}), 404
+
     if customer.status != 'active':
-        return jsonify({'error': 'Store not active'}), 400
+        return jsonify({'error': 'Store not active', 'status': 'error', 'running': False}), 400
 
     # Container name follows pattern: customer-{id}-web
     container_name = f"customer-{customer.id}-web"
@@ -976,8 +979,11 @@ def api_container_restart():
 
     customer = Customer.get_by_id(current_user.id)
 
+    if not customer:
+        return jsonify({'success': False, 'message': 'Customer not found'}), 404
+
     if customer.status != 'active':
-        return jsonify({'error': 'Store not active'}), 400
+        return jsonify({'success': False, 'message': 'Store not active'}), 400
 
     # Container name follows pattern: customer-{id}-web
     container_name = f"customer-{customer.id}-web"
@@ -1022,8 +1028,11 @@ def api_container_logs():
 
     customer = Customer.get_by_id(current_user.id)
 
+    if not customer:
+        return jsonify({'error': 'Customer not found', 'logs': []}), 404
+
     if customer.status != 'active':
-        return jsonify({'error': 'Store not active'}), 400
+        return jsonify({'error': 'Store not active', 'logs': []}), 400
 
     # Container name follows pattern: customer-{id}-web
     container_name = f"customer-{customer.id}-web"
