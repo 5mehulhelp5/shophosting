@@ -439,7 +439,8 @@ class PricingPlan:
     def __init__(self, id=None, name=None, slug=None, platform=None, tier_type=None,
                  price_monthly=None, store_limit=1, stripe_product_id=None,
                  stripe_price_id=None, features=None, memory_limit='1g',
-                 cpu_limit='1.0', is_active=True, display_order=0,
+                 cpu_limit='1.0', disk_limit_gb=25, bandwidth_limit_gb=250,
+                 is_active=True, display_order=0,
                  created_at=None, updated_at=None):
         self.id = id
         self.name = name
@@ -453,6 +454,8 @@ class PricingPlan:
         self.features = features if features else {}
         self.memory_limit = memory_limit
         self.cpu_limit = cpu_limit
+        self.disk_limit_gb = disk_limit_gb
+        self.bandwidth_limit_gb = bandwidth_limit_gb
         self.is_active = is_active
         self.display_order = display_order
         self.created_at = created_at
