@@ -2,8 +2,13 @@
 -- Description: Add tables for 2FA, login history, and verification tokens
 -- Date: 2026-01-29
 
--- Add password_changed_at to customers table
-ALTER TABLE customers ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP NULL;
+-- Add password_changed_at to customers table (ignore error if already exists)
+SET @column_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'customers' AND COLUMN_NAME = 'password_changed_at');
+SET @sql = IF(@column_exists = 0, 'ALTER TABLE customers ADD COLUMN password_changed_at TIMESTAMP NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 2FA settings per customer
 CREATE TABLE IF NOT EXISTS customer_2fa_settings (
