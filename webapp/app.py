@@ -342,6 +342,10 @@ app.register_blueprint(admin_bp, url_prefix='/admin')
 from metrics import metrics_bp
 app.register_blueprint(metrics_bp)
 
+# Register container metrics blueprint
+from container_metrics import container_metrics_bp
+app.register_blueprint(container_metrics_bp)
+
 # Apply rate limiting to admin login (stricter than customer login)
 # Admin accounts are high-value targets, so we limit more aggressively
 limiter.limit("3 per minute")(app.view_functions['admin.login'])
@@ -820,9 +824,8 @@ def dashboard_overview():
     credentials = customer.get_credentials()
     plan = PricingPlan.get_by_id(customer.plan_id) if customer.plan_id else None
     usage = customer.get_resource_usage() if hasattr(customer, 'get_resource_usage') else {
-        'cpu': {'percent': 0},
-        'memory': {'used_mb': 0, 'limit_mb': 512, 'percent': 0},
-        'disk': {'used_gb': 0, 'limit_gb': 10, 'percent': 0}
+        'disk': {'used_gb': 0, 'limit_gb': 10, 'percent': 0},
+        'bandwidth': {'used_gb': 0, 'limit_gb': 100, 'percent': 0}
     }
 
     return render_template('dashboard/overview.html',

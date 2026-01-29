@@ -109,9 +109,30 @@
     border-bottom: 1px solid var(--border-subtle);
 }
 
-.health-metrics iframe {
-    border-radius: var(--radius-md);
+.metric-panel {
     background: var(--bg-surface);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.metric-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 8px 12px 0;
+}
+
+.metric-panel iframe {
+    display: block;
+    background: transparent;
+}
+
+@media (max-width: 768px) {
+    .health-metrics {
+        grid-template-columns: 1fr;
+    }
 }
 
 .logs-section {
@@ -168,10 +189,6 @@
         gap: 16px;
         align-items: flex-start;
     }
-
-    .health-metrics {
-        grid-template-columns: 1fr;
-    }
 }
 {% endblock %}
 
@@ -205,12 +222,21 @@
     </div>
 
     <div class="health-metrics">
-        <iframe src="https://shophosting.io/grafana/d-solo/customer-metrics/customer-metrics?orgId=1&var-customer_id={{ customer.id }}&panelId=5&theme=dark"
-                width="100%" height="80" frameborder="0" title="CPU Usage"></iframe>
-        <iframe src="https://shophosting.io/grafana/d-solo/customer-metrics/customer-metrics?orgId=1&var-customer_id={{ customer.id }}&panelId=6&theme=dark"
-                width="100%" height="80" frameborder="0" title="Memory Usage"></iframe>
-        <iframe src="https://shophosting.io/grafana/d-solo/customer-metrics/customer-metrics?orgId=1&var-customer_id={{ customer.id }}&panelId=7&theme=dark"
-                width="100%" height="80" frameborder="0" title="Requests/sec"></iframe>
+        <div class="metric-panel">
+            <div class="metric-label">CPU</div>
+            <iframe src="https://shophosting.io/grafana/d-solo/customer-metrics/customer-metrics?orgId=1&var-customer_id={{ customer.id }}&panelId=5&theme=dark"
+                    width="100%" height="80" frameborder="0"></iframe>
+        </div>
+        <div class="metric-panel">
+            <div class="metric-label">Memory</div>
+            <iframe src="https://shophosting.io/grafana/d-solo/customer-metrics/customer-metrics?orgId=1&var-customer_id={{ customer.id }}&panelId=6&theme=dark"
+                    width="100%" height="80" frameborder="0"></iframe>
+        </div>
+        <div class="metric-panel">
+            <div class="metric-label">Network</div>
+            <iframe src="https://shophosting.io/grafana/d-solo/customer-metrics/customer-metrics?orgId=1&var-customer_id={{ customer.id }}&panelId=7&theme=dark"
+                    width="100%" height="80" frameborder="0"></iframe>
+        </div>
     </div>
 
     <div class="logs-section">
