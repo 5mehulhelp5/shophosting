@@ -1280,6 +1280,7 @@ def dashboard_settings():
 # =============================================================================
 
 @app.route('/api/settings/password', methods=['POST'])
+@csrf.exempt
 @login_required
 @limiter.limit("5 per hour")
 def api_settings_password():
@@ -1309,6 +1310,7 @@ def api_settings_password():
 
 
 @app.route('/api/settings/2fa/setup', methods=['POST'])
+@csrf.exempt
 @login_required
 @limiter.limit("10 per hour")
 def api_settings_2fa_setup():
@@ -1353,6 +1355,7 @@ def api_settings_2fa_setup():
 
 
 @app.route('/api/settings/2fa/verify', methods=['POST'])
+@csrf.exempt
 @login_required
 @limiter.limit("10 per hour")
 def api_settings_2fa_verify():
@@ -1397,6 +1400,7 @@ def api_settings_2fa_verify():
 
 
 @app.route('/api/settings/2fa/disable', methods=['POST'])
+@csrf.exempt
 @login_required
 @limiter.limit("5 per hour")
 def api_settings_2fa_disable():
@@ -1423,6 +1427,7 @@ def api_settings_2fa_disable():
 
 
 @app.route('/api/settings/2fa/backup-codes/regenerate', methods=['POST'])
+@csrf.exempt
 @login_required
 @limiter.limit("5 per hour")
 def api_settings_2fa_backup_codes_regenerate():
@@ -1482,6 +1487,7 @@ def api_settings_sessions():
 
 
 @app.route('/api/settings/sessions/logout-all', methods=['POST'])
+@csrf.exempt
 @login_required
 @limiter.limit("5 per hour")
 def api_settings_logout_all():
