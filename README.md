@@ -672,7 +672,8 @@ status.shophosting.io  A  147.135.8.170
 │   ├── 002_add_admin_users.sql
 │   ├── 003_add_ticketing_system.sql
 │   ├── 005_add_admin_features.sql   # Admin user management features
-│   └── 006_add_staging_environments.sql  # Staging environments
+│   ├── 006_add_staging_environments.sql  # Staging environments
+│   └── 013_add_status_page_tables.sql    # Status page incidents and maintenance
 ├── scripts/                # Utility scripts
 │   ├── backup.sh           # Daily backup script
 │   ├── restore.sh          # Restore tool
