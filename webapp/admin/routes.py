@@ -230,6 +230,13 @@ def customer_detail(customer_id):
     if in_progress_job:
         provisioning_logs = get_provisioning_logs_by_job(in_progress_job['job_id'])
 
+    # Fetch monitoring data for active customers
+    monitoring_status = None
+    monitoring_alerts = []
+    if customer.status == 'active':
+        monitoring_status = CustomerMonitoringStatus.get_or_create(customer_id)
+        monitoring_alerts = MonitoringAlert.get_by_customer(customer_id, limit=5)
+
     return render_template('admin/customer_detail.html',
                            admin=admin,
                            customer=customer,
@@ -238,7 +245,9 @@ def customer_detail(customer_id):
                            jobs=jobs,
                            audit_logs=audit_logs,
                            provisioning_logs=provisioning_logs,
-                           in_progress_job=in_progress_job)
+                           in_progress_job=in_progress_job,
+                           monitoring_status=monitoring_status,
+                           monitoring_alerts=monitoring_alerts)
 
 
 @admin_bp.route('/customers/<int:customer_id>/resources')
