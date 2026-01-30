@@ -9,13 +9,14 @@ from mysql.connector import pooling
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# Database connection pool
-db_pool = None
+# Database connection pools
+db_pool = None       # Primary pool for writes
+db_pool_read = None  # Read replica pool (optional)
 
 
 def init_db_pool():
-    """Initialize database connection pool"""
-    global db_pool
+    """Initialize database connection pool(s)"""
+    global db_pool, db_pool_read
 
     # In testing mode, allow graceful failure if database isn't available
     is_testing = os.getenv('FLASK_ENV') == 'testing'
@@ -31,6 +32,7 @@ def init_db_pool():
             "Please set it in /opt/shophosting/.env"
         )
 
+    # Primary (write) pool configuration
     db_config = {
         'host': os.getenv('DB_HOST', 'localhost'),
         'user': os.getenv('DB_USER', 'shophosting_app'),
@@ -42,6 +44,25 @@ def init_db_pool():
 
     try:
         db_pool = pooling.MySQLConnectionPool(**db_config)
+
+        # Initialize read replica pool if configured
+        replica_host = os.getenv('DB_REPLICA_HOST')
+        if replica_host:
+            replica_config = {
+                'host': replica_host,
+                'user': os.getenv('DB_REPLICA_USER', 'shophosting_read'),
+                'password': os.getenv('DB_REPLICA_PASSWORD', db_password),
+                'database': os.getenv('DB_NAME', 'shophosting_db'),
+                'pool_name': 'shophosting_read_pool',
+                'pool_size': int(os.getenv('DB_REPLICA_POOL_SIZE', '3'))
+            }
+            try:
+                db_pool_read = pooling.MySQLConnectionPool(**replica_config)
+                print(f"INFO: Read replica pool initialized ({replica_host})")
+            except mysql.connector.Error as e:
+                print(f"WARNING: Could not connect to read replica, using primary for reads: {e}")
+                db_pool_read = None
+
         return db_pool
     except mysql.connector.Error as e:
         if is_testing:
@@ -50,10 +71,30 @@ def init_db_pool():
         raise
 
 
-def get_db_connection():
-    """Get a connection from the pool"""
+def get_db_connection(read_only=False):
+    """
+    Get a connection from the appropriate pool.
+
+    Args:
+        read_only: If True and a read replica is configured, use the replica pool.
+                   Otherwise, use the primary pool.
+
+    Returns:
+        MySQL connection from the pool
+    """
+    global db_pool, db_pool_read
+
     if db_pool is None:
         init_db_pool()
+
+    # Use read replica if available and requested
+    if read_only and db_pool_read is not None:
+        try:
+            return db_pool_read.get_connection()
+        except mysql.connector.Error:
+            # Fall back to primary if replica is unavailable
+            pass
+
     return db_pool.get_connection()
 
 
@@ -140,7 +181,8 @@ class Customer:
                  db_password=None, admin_user=None, admin_password=None,
                  error_message=None, stripe_customer_id=None, plan_id=None,
                  staging_count=None, password_changed_at=None, timezone=None,
-                 created_at=None, updated_at=None):
+                 suspension_reason=None, suspended_at=None, auto_suspended=False,
+                 reactivated_at=None, created_at=None, updated_at=None):
         self.id = id
         self.email = email
         self.password_hash = password_hash
@@ -162,6 +204,11 @@ class Customer:
         self.staging_count = staging_count or 0
         self.password_changed_at = password_changed_at
         self.timezone = timezone or 'America/New_York'
+        # Suspension tracking fields
+        self.suspension_reason = suspension_reason
+        self.suspended_at = suspended_at
+        self.auto_suspended = auto_suspended or False
+        self.reactivated_at = reactivated_at
         self.created_at = created_at or datetime.now()
         self.updated_at = updated_at or datetime.now()
 
@@ -251,6 +298,124 @@ class Customer:
 
     def get_id(self):
         return str(self.id)
+
+    # =========================================================================
+    # Suspension Methods
+    # =========================================================================
+
+    def suspend(self, reason, auto=False, disk_usage_bytes=None, bandwidth_usage_bytes=None):
+        """
+        Suspend this customer account.
+
+        Args:
+            reason: Reason for suspension (e.g., 'resource_limit_exceeded', 'payment_failed')
+            auto: True if this is an automatic system suspension
+            disk_usage_bytes: Current disk usage at time of suspension
+            bandwidth_usage_bytes: Current bandwidth usage at time of suspension
+        """
+        if self.status == 'suspended':
+            return False  # Already suspended
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            # Update customer status
+            cursor.execute("""
+                UPDATE customers
+                SET status = 'suspended',
+                    suspension_reason = %s,
+                    suspended_at = NOW(),
+                    auto_suspended = %s
+                WHERE id = %s AND status != 'suspended'
+            """, (reason, auto, self.id))
+
+            if cursor.rowcount == 0:
+                return False  # No update made (already suspended or doesn't exist)
+
+            # Log the suspension
+            cursor.execute("""
+                INSERT INTO customer_suspension_log
+                (customer_id, action, reason, auto_action, disk_usage_bytes, bandwidth_usage_bytes)
+                VALUES (%s, 'suspended', %s, %s, %s, %s)
+            """, (self.id, reason, auto, disk_usage_bytes, bandwidth_usage_bytes))
+
+            conn.commit()
+
+            # Update local object
+            self.status = 'suspended'
+            self.suspension_reason = reason
+            self.suspended_at = datetime.now()
+            self.auto_suspended = auto
+
+            return True
+        finally:
+            cursor.close()
+            conn.close()
+
+    def reactivate(self, actor_id=None):
+        """
+        Reactivate this suspended customer account.
+
+        Args:
+            actor_id: ID of admin user performing reactivation (None if automatic)
+        """
+        if self.status != 'suspended':
+            return False  # Not suspended
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            # Update customer status
+            cursor.execute("""
+                UPDATE customers
+                SET status = 'active',
+                    suspension_reason = NULL,
+                    suspended_at = NULL,
+                    auto_suspended = FALSE,
+                    reactivated_at = NOW()
+                WHERE id = %s AND status = 'suspended'
+            """, (self.id,))
+
+            if cursor.rowcount == 0:
+                return False  # No update made
+
+            # Log the reactivation
+            cursor.execute("""
+                INSERT INTO customer_suspension_log
+                (customer_id, action, reason, auto_action, actor_id)
+                VALUES (%s, 'reactivated', 'manual_reactivation', %s, %s)
+            """, (self.id, actor_id is None, actor_id))
+
+            conn.commit()
+
+            # Update local object
+            self.status = 'active'
+            self.suspension_reason = None
+            self.suspended_at = None
+            self.auto_suspended = False
+            self.reactivated_at = datetime.now()
+
+            return True
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_auto_suspended_customers():
+        """Get all customers that were auto-suspended (for potential auto-reactivation)"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT * FROM customers
+                WHERE status = 'suspended' AND auto_suspended = TRUE
+                ORDER BY suspended_at
+            """)
+            rows = cursor.fetchall()
+            return [Customer(**row) for row in rows]
+        finally:
+            cursor.close()
+            conn.close()
 
     # =========================================================================
     # Database Operations

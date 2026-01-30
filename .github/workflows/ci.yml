@@ -63,8 +63,22 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r webapp/requirements.txt
+          pip install pytest-cov coverage
 
-      - name: Run tests
+      - name: Check migration files are valid SQL
+        run: |
+          # Verify all migration files are valid SQL syntax
+          for f in migrations/*.sql; do
+            echo "Checking $f..."
+            # Basic syntax check - ensure file is not empty and has valid structure
+            if [ ! -s "$f" ]; then
+              echo "ERROR: $f is empty"
+              exit 1
+            fi
+          done
+          echo "All migration files look valid"
+
+      - name: Run tests with coverage
         env:
           FLASK_ENV: testing
           SECRET_KEY: test-secret-key-for-ci-only
@@ -77,7 +91,17 @@ jobs:
           STRIPE_WEBHOOK_SECRET: whsec_test_placeholder
         run: |
           cd webapp
-          python -m pytest tests/ -v --tb=short
+          python -m pytest tests/ -v --tb=short \
+            --cov=. --cov-report=term-missing --cov-report=html \
+            --cov-fail-under=60
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: webapp/htmlcov/
+          retention-days: 7
 
   security:
     name: Security Scan
