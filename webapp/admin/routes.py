@@ -2190,8 +2190,27 @@ def delete_customer(customer_id):
     customer_path = f"/var/customers/customer-{customer_id}"
     db_deleted = False
     directory_deleted = False
+    subscription_cancelled = False
 
     try:
+        # Cancel Stripe subscription if exists
+        subscription = Subscription.get_by_customer_id(customer_id)
+        if subscription and subscription.stripe_subscription_id:
+            try:
+                import stripe
+                from stripe_integration.config import init_stripe
+                init_stripe()
+                stripe.Subscription.cancel(subscription.stripe_subscription_id)
+                subscription_cancelled = True
+                logger.info(f"Cancelled Stripe subscription {subscription.stripe_subscription_id} for customer {customer_id}")
+            except stripe.error.InvalidRequestError as e:
+                # Subscription may already be cancelled or not exist
+                logger.warning(f"Could not cancel Stripe subscription: {e}")
+                subscription_cancelled = True  # Consider it handled
+            except Exception as e:
+                logger.error(f"Failed to cancel Stripe subscription: {e}")
+                # Continue with deletion even if Stripe cancellation fails
+
         # Stop and remove containers with volume removal
         if os.path.exists(customer_path):
             result = subprocess.run(
@@ -2254,7 +2273,13 @@ def delete_customer(customer_id):
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
+            # Delete related records first (foreign key order)
+            cursor.execute("DELETE FROM invoices WHERE customer_id = %s", (customer_id,))
+            cursor.execute("DELETE FROM subscriptions WHERE customer_id = %s", (customer_id,))
             cursor.execute("DELETE FROM provisioning_jobs WHERE customer_id = %s", (customer_id,))
+            cursor.execute("DELETE FROM monitoring_alerts WHERE customer_id = %s", (customer_id,))
+            cursor.execute("DELETE FROM monitoring_checks WHERE customer_id = %s", (customer_id,))
+            cursor.execute("DELETE FROM customer_monitoring_status WHERE customer_id = %s", (customer_id,))
             cursor.execute("DELETE FROM customers WHERE id = %s", (customer_id,))
             conn.commit()
             cursor.close()
@@ -2264,9 +2289,10 @@ def delete_customer(customer_id):
             logger.error(f"Database deletion failed: {db_error}")
             raise
 
+        subscription_msg = ' and cancelled subscription' if subscription_cancelled else ''
         log_admin_action(admin.id, 'delete_customer', 'customer', customer_id,
-                        f'Deleted customer {email} and removed containers', request.remote_addr)
-        flash(f'Customer {email} and all associated resources deleted successfully.', 'success')
+                        f'Deleted customer {email}{subscription_msg} and removed containers', request.remote_addr)
+        flash(f'Customer {email} and all associated resources deleted successfully.{" Stripe subscription cancelled." if subscription_cancelled else ""}', 'success')
     except Exception as e:
         if directory_deleted and db_deleted:
             log_admin_action(admin.id, 'delete_customer_partial', 'customer', customer_id,
