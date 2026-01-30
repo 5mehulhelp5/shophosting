@@ -61,6 +61,5 @@ docker/wordpress/.env
 # OpenProject (local development, contains data and secrets)
 openproject/
 
-# Wiki.js (secrets and local backups)
-wikijs/.env
-wikijs/backups/
+# Wiki.js (local instance, contains secrets)
+wikijs/
