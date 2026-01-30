@@ -1,0 +1,240 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}{% if mailbox %}Edit{% else %}Create{% endif %} Mailbox{% endblock %}
+{% block page_title %}{% if mailbox %}Edit{% else %}Create{% endif %} Mailbox{% endblock %}
+
+{% block content %}
+<div style="max-width: 700px;">
+    <a href="{{ url_for('admin.mail_mailboxes') }}" class="btn btn-secondary btn-sm mb-4">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+        Back to Mailboxes
+    </a>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">{% if mailbox %}Edit Mailbox: {{ mailbox.email }}{% else %}New Mailbox{% endif %}</h3>
+        </div>
+        <div class="card-body">
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                {% if not mailbox %}
+                <!-- Create mode: email address -->
+                <div class="form-group">
+                    <label for="username">Email Address *</label>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <input type="text" id="username" name="username" class="form-control" required
+                               placeholder="username" style="flex: 1;">
+                        <span style="color: var(--text-secondary); font-size: 1.1rem;">@</span>
+                        <select id="domain" name="domain" class="form-control" required style="flex: 1;">
+                            {% for domain in domains %}
+                            <option value="{{ domain }}">{{ domain }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password *</label>
+                    <input type="password" id="password" name="password" class="form-control" required
+                           placeholder="Enter password" minlength="8">
+                    <p class="text-muted" style="font-size: 0.85rem; margin-top: 6px;">
+                        Minimum 8 characters. Use a strong password with mixed characters.
+                    </p>
+                </div>
+
+                <div class="form-group">
+                    <label for="password_confirm">Confirm Password *</label>
+                    <input type="password" id="password_confirm" name="password_confirm" class="form-control" required
+                           placeholder="Confirm password">
+                </div>
+                {% endif %}
+
+                <div class="form-group">
+                    <label for="quota_mb">Quota (MB)</label>
+                    <input type="number" id="quota_mb" name="quota_mb" class="form-control"
+                           value="{{ mailbox.quota_mb if mailbox else 1024 }}"
+                           min="0" step="1">
+                    <p class="text-muted" style="font-size: 0.85rem; margin-top: 6px;">
+                        Set to 0 for unlimited quota.
+                    </p>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" name="is_active" {% if not mailbox or mailbox.is_active %}checked{% endif %} style="width: 18px; height: 18px;">
+                        <span>Active</span>
+                    </label>
+                    <p class="text-muted" style="font-size: 0.85rem; margin-top: 6px;">
+                        Disabled mailboxes cannot receive or send email.
+                    </p>
+                </div>
+
+                <div class="form-group">
+                    <label for="forward_to">Forward To</label>
+                    <input type="email" id="forward_to" name="forward_to" class="form-control"
+                           value="{{ mailbox.forward_to if mailbox else '' }}"
+                           placeholder="email@example.com">
+                    <p class="text-muted" style="font-size: 0.85rem; margin-top: 6px;">
+                        Forward a copy of incoming mail to this address (optional).
+                    </p>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" name="is_catch_all" {% if mailbox and mailbox.is_catch_all %}checked{% endif %} style="width: 18px; height: 18px;">
+                        <span>Catch-All Mailbox</span>
+                    </label>
+                    <p class="text-muted" style="font-size: 0.85rem; margin-top: 6px;">
+                        Receive all emails sent to non-existent addresses at this domain.
+                    </p>
+                </div>
+
+                {% if mailbox and mailbox.is_virtual %}
+                <!-- Password change section for virtual users -->
+                <div class="card" style="margin-top: 24px; background: var(--bg-surface);">
+                    <div class="card-header">
+                        <h3 class="card-title" style="font-size: 1rem;">Change Password</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label for="new_password">New Password</label>
+                            <input type="password" id="new_password" name="new_password" class="form-control"
+                                   placeholder="Leave blank to keep current password" minlength="8">
+                        </div>
+                        <div class="form-group mb-0">
+                            <label for="new_password_confirm">Confirm New Password</label>
+                            <input type="password" id="new_password_confirm" name="new_password_confirm" class="form-control"
+                                   placeholder="Confirm new password">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Autoresponder section -->
+                <div class="card" style="margin-top: 24px; background: var(--bg-surface);">
+                    <div class="card-header">
+                        <h3 class="card-title" style="font-size: 1rem;">Autoresponder</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                                <input type="checkbox" name="autoresponder_enabled" {% if mailbox.autoresponder_enabled %}checked{% endif %} style="width: 18px; height: 18px;">
+                                <span>Enable Autoresponder</span>
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label for="autoresponder_subject">Subject</label>
+                            <input type="text" id="autoresponder_subject" name="autoresponder_subject" class="form-control"
+                                   value="{{ mailbox.autoresponder_subject or '' }}"
+                                   placeholder="Out of Office">
+                        </div>
+                        <div class="form-group mb-0">
+                            <label for="autoresponder_body">Message</label>
+                            <textarea id="autoresponder_body" name="autoresponder_body" class="form-control" rows="4"
+                                      placeholder="I am currently out of the office...">{{ mailbox.autoresponder_body or '' }}</textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Aliases section -->
+                <div class="card" style="margin-top: 24px; background: var(--bg-surface);">
+                    <div class="card-header">
+                        <h3 class="card-title" style="font-size: 1rem;">Aliases</h3>
+                        <a href="{{ url_for('admin.mail_alias_create', destination=mailbox.email) }}" class="btn btn-secondary btn-sm">Add Alias</a>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Alias</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for alias in mailbox.aliases %}
+                                <tr>
+                                    <td class="mono">{{ alias.alias_email }}</td>
+                                    <td>
+                                        {% if alias.is_active %}
+                                            <span class="badge badge-active">Active</span>
+                                        {% else %}
+                                            <span class="badge badge-suspended">Disabled</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <form method="POST" action="{{ url_for('admin.mail_alias_delete', alias_id=alias.id) }}" style="display: inline;">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this alias?')">Delete</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="3" class="text-muted text-center">No aliases configured</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div style="display: flex; gap: 12px; margin-top: 24px;">
+                    <button type="submit" class="btn btn-primary">
+                        {% if mailbox %}Update Mailbox{% else %}Create Mailbox{% endif %}
+                    </button>
+                    <a href="{{ url_for('admin.mail_mailboxes') }}" class="btn btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if mailbox %}
+    <!-- Danger Zone -->
+    <div class="card" style="margin-top: 24px; border-color: rgba(239, 68, 68, 0.3);">
+        <div class="card-header" style="background: var(--error-muted);">
+            <h3 class="card-title" style="color: var(--error);">Danger Zone</h3>
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-4">Deleting a mailbox is permanent and cannot be undone. All emails will be lost.</p>
+            <form method="POST" action="{{ url_for('admin.mail_mailbox_delete', mailbox_id=mailbox.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-danger" onclick="return confirm('Are you absolutely sure? This will permanently delete the mailbox and all its emails.')">
+                    Delete Mailbox
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script nonce="{{ csp_nonce() }}">
+// Password confirmation validation
+document.querySelector('form').addEventListener('submit', function(e) {
+    var password = document.getElementById('password');
+    var passwordConfirm = document.getElementById('password_confirm');
+
+    if (password && passwordConfirm) {
+        if (password.value !== passwordConfirm.value) {
+            e.preventDefault();
+            alert('Passwords do not match.');
+            return false;
+        }
+    }
+
+    var newPassword = document.getElementById('new_password');
+    var newPasswordConfirm = document.getElementById('new_password_confirm');
+
+    if (newPassword && newPasswordConfirm) {
+        if (newPassword.value !== newPasswordConfirm.value) {
+            e.preventDefault();
+            alert('New passwords do not match.');
+            return false;
+        }
+    }
+});
+</script>
+{% endblock %}
