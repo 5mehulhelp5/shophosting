@@ -221,6 +221,9 @@ def get_rate_limit_key():
 # Configure Redis storage for rate limiting (shared across workers)
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/1')
 
+# Disable rate limiting in test mode
+is_testing = os.getenv('FLASK_ENV') == 'testing'
+
 limiter = Limiter(
     key_func=get_rate_limit_key,
     app=app,
@@ -228,6 +231,7 @@ limiter = Limiter(
     storage_options={"socket_connect_timeout": 5},
     default_limits=["200 per day", "50 per hour"],  # Global defaults
     strategy="fixed-window",
+    enabled=not is_testing,  # Disable in test mode
 )
 
 
@@ -368,6 +372,10 @@ app.register_blueprint(container_metrics_bp)
 # Register status blueprint for public status page
 from status import status_bp
 app.register_blueprint(status_bp, url_prefix='/status')
+
+# Register Cloudflare DNS management blueprint
+from cloudflare import cloudflare_bp
+app.register_blueprint(cloudflare_bp)
 
 # Apply rate limiting to admin login (stricter than customer login)
 # Admin accounts are high-value targets, so we limit more aggressively

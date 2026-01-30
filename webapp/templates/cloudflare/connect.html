@@ -1,0 +1,439 @@
+{% extends "dashboard/base_dashboard.html" %}
+
+{% block page_title %}Connect Cloudflare{% endblock %}
+
+{% block dashboard_css %}
+.connect-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    margin-bottom: 24px;
+    overflow: hidden;
+}
+
+.connect-card-header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.connect-card-icon {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, #f38020 0%, #f9a825 100%);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+}
+
+.connect-card-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.connect-card-subtitle {
+    font-size: 0.9rem;
+    color: var(--text-tertiary);
+    margin-top: 4px;
+}
+
+.connect-card-body {
+    padding: 28px;
+}
+
+.instructions {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 24px;
+    margin-bottom: 28px;
+}
+
+.instructions-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.instructions-title svg {
+    color: var(--primary);
+}
+
+.steps-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    counter-reset: step-counter;
+}
+
+.steps-list li {
+    position: relative;
+    padding-left: 40px;
+    padding-bottom: 20px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.steps-list li:last-child {
+    padding-bottom: 0;
+}
+
+.steps-list li::before {
+    counter-increment: step-counter;
+    content: counter(step-counter);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 28px;
+    height: 28px;
+    background: var(--primary-muted);
+    color: var(--primary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.steps-list li strong {
+    color: var(--text-primary);
+}
+
+.steps-list li code {
+    background: var(--bg-elevated);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: var(--primary);
+}
+
+.external-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.external-link:hover {
+    text-decoration: underline;
+}
+
+.external-link svg {
+    width: 14px;
+    height: 14px;
+}
+
+.permissions-box {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    margin-top: 12px;
+    margin-bottom: 8px;
+}
+
+.permissions-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+
+.permission-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 0.9rem;
+}
+
+.permission-item:last-child {
+    border-bottom: none;
+}
+
+.permission-item svg {
+    color: var(--success);
+    flex-shrink: 0;
+}
+
+.permission-item span {
+    color: var(--text-secondary);
+}
+
+.permission-item strong {
+    color: var(--text-primary);
+}
+
+.token-form {
+    margin-top: 8px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-label {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.form-hint {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    margin-top: 6px;
+}
+
+.token-input {
+    width: 100%;
+    padding: 14px 16px;
+    font-size: 0.95rem;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.token-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-muted);
+}
+
+.token-input::placeholder {
+    color: var(--text-muted);
+}
+
+.btn-connect {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 14px 28px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: white;
+    background: var(--gradient-primary);
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-connect:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+}
+
+.btn-connect:active {
+    transform: translateY(0);
+}
+
+.btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 24px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+    background: var(--bg-elevated);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+}
+
+.form-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 28px;
+}
+
+.security-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+    background: var(--success-muted);
+    border: 1px solid var(--success);
+    border-radius: var(--radius-md);
+    margin-top: 24px;
+}
+
+.security-note svg {
+    color: var(--success);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.security-note-text {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.security-note-text strong {
+    color: var(--text-primary);
+}
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="connect-card">
+    <div class="connect-card-header">
+        <div class="connect-card-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                <path d="M2 17l10 5 10-5"/>
+                <path d="M2 12l10 5 10-5"/>
+            </svg>
+        </div>
+        <div>
+            <div class="connect-card-title">Connect Cloudflare</div>
+            <div class="connect-card-subtitle">Manage your DNS records directly from your dashboard</div>
+        </div>
+    </div>
+
+    <div class="connect-card-body">
+        <div class="instructions">
+            <div class="instructions-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="16" x2="12" y2="12"/>
+                    <line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+                How to Create Your API Token
+            </div>
+
+            <ol class="steps-list">
+                <li>
+                    <strong>Add your domain to Cloudflare</strong> (if not already added):
+                    <br>
+                    Go to <a href="https://dash.cloudflare.com/" target="_blank" rel="noopener" class="external-link">
+                        Cloudflare Dashboard
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                            <polyline points="15 3 21 3 21 9"/>
+                            <line x1="10" y1="14" x2="21" y2="3"/>
+                        </svg>
+                    </a>, click <strong>"Add a Site"</strong>, enter your domain, and follow the setup wizard. You'll need to update your domain's nameservers at your registrar to point to Cloudflare.
+                    <br>
+                    <span style="font-size: 0.85rem; color: var(--text-muted);">(Skip this step if your domain is already on Cloudflare)</span>
+                </li>
+                <li>
+                    Go to <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener" class="external-link">
+                        Cloudflare API Tokens
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                            <polyline points="15 3 21 3 21 9"/>
+                            <line x1="10" y1="14" x2="21" y2="3"/>
+                        </svg>
+                    </a>
+                    (My Profile &rarr; API Tokens).
+                </li>
+                <li>
+                    Click <strong>"Create Token"</strong> button.
+                </li>
+                <li>
+                    Find <strong>"Edit zone DNS"</strong> template and click <strong>"Use template"</strong>.
+                    <div class="permissions-box">
+                        <div class="permissions-title">This template includes:</div>
+                        <div class="permission-item">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            <span><strong>Zone - DNS - Edit</strong> - Manage DNS records</span>
+                        </div>
+                        <div class="permission-item">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            <span><strong>Zone - Zone - Read</strong> - View zone information</span>
+                        </div>
+                    </div>
+                </li>
+                <li>
+                    Under <strong>"Zone Resources"</strong>, select:
+                    <br>
+                    <code>Include</code> &rarr; <code>Specific zone</code> &rarr; <strong>Your domain</strong>
+                    <br>
+                    <span style="font-size: 0.85rem; color: var(--text-muted);">(Or select "All zones" if you want to manage multiple domains)</span>
+                </li>
+                <li>
+                    Click <strong>"Continue to summary"</strong>, then <strong>"Create Token"</strong>.
+                </li>
+                <li>
+                    <strong>Copy the token</strong> immediately - it won't be shown again!
+                </li>
+            </ol>
+        </div>
+
+        <form method="POST" action="{{ url_for('cloudflare.connect_submit') }}" class="token-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <div class="form-group">
+                <label for="api_token" class="form-label">Your Cloudflare API Token</label>
+                <input
+                    type="password"
+                    id="api_token"
+                    name="api_token"
+                    class="token-input"
+                    placeholder="Paste your API token here..."
+                    required
+                    autocomplete="off"
+                >
+                <div class="form-hint">Your token will be encrypted and stored securely.</div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn-connect">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                    </svg>
+                    Connect Cloudflare
+                </button>
+                <a href="{{ url_for('dashboard_domains') }}" class="btn-secondary">Cancel</a>
+            </div>
+        </form>
+
+        <div class="security-note">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                <polyline points="9 12 11 14 15 10"/>
+            </svg>
+            <div class="security-note-text">
+                <strong>Your token is safe.</strong> We only request the minimum permissions needed to manage DNS records.
+                Your token is encrypted using industry-standard encryption before being stored.
+                You can revoke access anytime from your Cloudflare dashboard.
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

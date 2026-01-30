@@ -2,23 +2,20 @@
 """
 Cloudflare DNS Management Routes
 
-Provides OAuth flow for connecting Cloudflare accounts and DNS record management.
+Provides API token flow for connecting Cloudflare accounts and DNS record management.
+Customers create an API token in their Cloudflare dashboard and paste it here.
 """
 
 import os
-import secrets
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from flask import render_template, request, redirect, url_for, flash, session, jsonify
+from flask import render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
 
 from . import cloudflare_bp
 from .models import CloudflareConnection, DNSRecordCache
-from .api import (
-    CloudflareAPI, CloudflareAPIError,
-    get_oauth_authorize_url, exchange_code_for_tokens, refresh_access_token
-)
+from .api import CloudflareAPI, CloudflareAPIError
 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -35,38 +32,12 @@ def get_cloudflare_api(connection):
     """
     Get an authenticated Cloudflare API instance.
 
-    If the access token is expired and a refresh token is available,
-    automatically refreshes the token and updates the connection.
-
     Args:
         connection: CloudflareConnection instance
 
     Returns:
         CloudflareAPI: Authenticated API client
-
-    Raises:
-        CloudflareAPIError: If token refresh fails
     """
-    if connection.is_token_expired() and connection.refresh_token:
-        logger.info(f"Refreshing expired token for customer {connection.customer_id}")
-        try:
-            token_data = refresh_access_token(connection.refresh_token)
-
-            # Update connection with new tokens
-            connection.access_token = token_data['access_token']
-            if 'refresh_token' in token_data:
-                connection.refresh_token = token_data['refresh_token']
-
-            # Calculate new expiry time
-            expires_in = token_data.get('expires_in', 3600)
-            connection.token_expires_at = datetime.now() + timedelta(seconds=expires_in)
-            connection.save()
-
-            logger.info(f"Successfully refreshed token for customer {connection.customer_id}")
-        except CloudflareAPIError as e:
-            logger.error(f"Failed to refresh token for customer {connection.customer_id}: {e}")
-            raise
-
     return CloudflareAPI(connection.access_token)
 
 
@@ -122,17 +93,16 @@ def sync_dns_records(customer_id, api, zone_id):
 
 
 # =============================================================================
-# OAuth Routes
+# Connection Routes
 # =============================================================================
 
 @cloudflare_bp.route('/connect')
 @login_required
 def connect():
     """
-    Initiate OAuth flow to connect Cloudflare account.
+    Show the API token entry form for connecting Cloudflare account.
 
-    Generates a random state parameter for CSRF protection, stores it in
-    the session, and redirects to Cloudflare's OAuth authorization page.
+    If already connected, redirects to the confirmation page.
     """
     # Check if already connected
     existing = CloudflareConnection.get_by_customer_id(current_user.id)
@@ -140,81 +110,46 @@ def connect():
         flash('Your Cloudflare account is already connected.', 'info')
         return redirect(url_for('cloudflare.confirm'))
 
-    # Generate state for CSRF protection
-    state = secrets.token_urlsafe(32)
-    session['cloudflare_oauth_state'] = state
-
-    try:
-        auth_url = get_oauth_authorize_url(state)
-        logger.info(f"Initiating Cloudflare OAuth for customer {current_user.id}")
-        return redirect(auth_url)
-    except ValueError as e:
-        logger.error(f"Cloudflare OAuth configuration error: {e}")
-        flash('Cloudflare integration is not properly configured. Please contact support.', 'error')
-        return redirect(url_for('dashboard_overview'))
+    return render_template('cloudflare/connect.html')
 
 
-@cloudflare_bp.route('/callback')
+@cloudflare_bp.route('/connect', methods=['POST'])
 @login_required
-def callback():
+def connect_submit():
     """
-    Handle OAuth callback from Cloudflare.
+    Process the API token submission.
 
-    Verifies the state parameter, exchanges the authorization code for tokens,
-    saves the connection, and redirects to the confirmation page.
+    Validates the token by making a test API call, then saves the connection.
     """
-    # Check for errors from Cloudflare
-    error = request.args.get('error')
-    if error:
-        error_description = request.args.get('error_description', error)
-        logger.warning(f"Cloudflare OAuth error for customer {current_user.id}: {error_description}")
-        flash(f'Cloudflare authorization failed: {error_description}', 'error')
-        return redirect(url_for('dashboard_overview'))
+    api_token = request.form.get('api_token', '').strip()
 
-    # Verify state parameter
-    state = request.args.get('state')
-    expected_state = session.pop('cloudflare_oauth_state', None)
+    if not api_token:
+        flash('Please enter your Cloudflare API token.', 'error')
+        return redirect(url_for('cloudflare.connect'))
 
-    if not state or state != expected_state:
-        logger.warning(f"Invalid OAuth state for customer {current_user.id}")
-        flash('Invalid authorization state. Please try again.', 'error')
-        return redirect(url_for('dashboard_overview'))
-
-    # Get authorization code
-    code = request.args.get('code')
-    if not code:
-        flash('No authorization code received. Please try again.', 'error')
-        return redirect(url_for('dashboard_overview'))
-
+    # Validate token by trying to list zones
     try:
-        # Exchange code for tokens
-        token_data = exchange_code_for_tokens(code)
+        api = CloudflareAPI(api_token)
+        zones = api.get_zones()
 
-        # Calculate token expiry
-        expires_in = token_data.get('expires_in', 3600)
-        token_expires_at = datetime.now() + timedelta(seconds=expires_in)
-
-        # Create new connection (or update existing)
+        # Token is valid - create connection
         existing = CloudflareConnection.get_by_customer_id(current_user.id)
         if existing:
             connection = existing
         else:
             connection = CloudflareConnection(customer_id=current_user.id)
 
-        connection.access_token = token_data['access_token']
-        connection.refresh_token = token_data.get('refresh_token')
-        connection.token_expires_at = token_expires_at
+        connection.access_token = api_token
         connection.connected_at = datetime.now()
 
-        # Try to find the zone for the customer's domain
-        api = CloudflareAPI(token_data['access_token'])
+        # Try to auto-select zone matching customer's domain
         customer = Customer.get_by_id(current_user.id)
-
         if customer and customer.domain:
-            zone = api.get_zone_by_name(customer.domain)
-            if zone:
-                connection.cloudflare_zone_id = zone['id']
-                logger.info(f"Found zone {zone['id']} for domain {customer.domain}")
+            for zone in zones:
+                if zone.get('name') == customer.domain:
+                    connection.cloudflare_zone_id = zone['id']
+                    logger.info(f"Auto-selected zone {zone['id']} for domain {customer.domain}")
+                    break
 
         connection.save()
         logger.info(f"Cloudflare connection saved for customer {current_user.id}")
@@ -223,13 +158,12 @@ def callback():
         return redirect(url_for('cloudflare.confirm'))
 
     except CloudflareAPIError as e:
-        logger.error(f"Cloudflare OAuth token exchange failed for customer {current_user.id}: {e}")
-        flash(f'Failed to connect Cloudflare account: {e.message}', 'error')
-        return redirect(url_for('dashboard_overview'))
-    except ValueError as e:
-        logger.error(f"Cloudflare configuration error: {e}")
-        flash('Cloudflare integration is not properly configured. Please contact support.', 'error')
-        return redirect(url_for('dashboard_overview'))
+        logger.error(f"Cloudflare API token validation failed for customer {current_user.id}: {e}")
+        if 'Invalid API Token' in str(e) or '401' in str(e):
+            flash('Invalid API token. Please check your token and try again.', 'error')
+        else:
+            flash(f'Failed to connect: {e.message}', 'error')
+        return redirect(url_for('cloudflare.connect'))
 
 
 @cloudflare_bp.route('/confirm')
@@ -337,7 +271,7 @@ def disconnect():
     """
     Remove Cloudflare connection.
 
-    Deletes the stored OAuth tokens and clears the DNS record cache.
+    Deletes the stored API token and clears the DNS record cache.
     """
     connection = CloudflareConnection.get_by_customer_id(current_user.id)
     if not connection:

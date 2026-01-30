@@ -17,9 +17,15 @@ def init_db_pool():
     """Initialize database connection pool"""
     global db_pool
 
+    # In testing mode, allow graceful failure if database isn't available
+    is_testing = os.getenv('FLASK_ENV') == 'testing'
+
     # Validate required database configuration
     db_password = os.getenv('DB_PASSWORD')
     if not db_password:
+        if is_testing:
+            print("WARNING: DB_PASSWORD not set, skipping database pool initialization in test mode")
+            return None
         raise RuntimeError(
             "CRITICAL: DB_PASSWORD environment variable is required. "
             "Please set it in /opt/shophosting/.env"
@@ -34,13 +40,18 @@ def init_db_pool():
         'pool_size': int(os.getenv('DB_POOL_SIZE', '5'))
     }
 
-    db_pool = pooling.MySQLConnectionPool(**db_config)
-    return db_pool
+    try:
+        db_pool = pooling.MySQLConnectionPool(**db_config)
+        return db_pool
+    except mysql.connector.Error as e:
+        if is_testing:
+            print(f"WARNING: Could not connect to database in test mode: {e}")
+            return None
+        raise
 
 
 def get_db_connection():
     """Get a connection from the pool"""
-    global db_pool
     if db_pool is None:
         init_db_pool()
     return db_pool.get_connection()

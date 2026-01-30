@@ -13,10 +13,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ['FLASK_ENV'] = 'testing'
 os.environ['FLASK_DEBUG'] = 'true'
 os.environ['SECRET_KEY'] = 'test-secret-key-for-testing-only'
-os.environ['DB_PASSWORD'] = os.environ.get('DB_PASSWORD', 'test_password')
-os.environ['DB_HOST'] = os.environ.get('DB_HOST', 'localhost')
-os.environ['DB_USER'] = os.environ.get('DB_USER', 'test_user')
-os.environ['DB_NAME'] = os.environ.get('DB_NAME', 'shophosting_test')
+# Don't set DB_PASSWORD in CI - allows graceful test mode without database
+# For local testing with a database, set these env vars before running pytest
+if 'DB_PASSWORD' not in os.environ:
+    # Clear any existing DB config to ensure test mode behavior
+    for key in ['DB_PASSWORD', 'DB_HOST', 'DB_USER', 'DB_NAME']:
+        os.environ.pop(key, None)
 os.environ['REDIS_URL'] = os.environ.get('REDIS_URL', 'redis://localhost:6379/1')
 
 

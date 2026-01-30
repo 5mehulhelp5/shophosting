@@ -1,0 +1,520 @@
+{% extends "dashboard/base_dashboard.html" %}
+
+{% block page_title %}Cloudflare DNS{% endblock %}
+
+{% block dashboard_css %}
+.cf-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    margin-bottom: 24px;
+    overflow: hidden;
+}
+
+.cf-card-header {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.cf-card-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.cf-card-icon {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, #f38020 0%, #f9a825 100%);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+}
+
+.cf-card-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.cf-card-subtitle {
+    font-size: 0.85rem;
+    color: var(--text-tertiary);
+    margin-top: 2px;
+}
+
+.cf-card-body {
+    padding: 24px 28px;
+}
+
+.connection-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 100px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.connection-status.connected {
+    background: var(--success-muted);
+    color: var(--success);
+}
+
+.connection-status svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Zone Selector */
+.zone-selector {
+    margin-bottom: 24px;
+}
+
+.zone-label {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    display: block;
+}
+
+.zone-select {
+    width: 100%;
+    max-width: 400px;
+    padding: 12px 16px;
+    font-size: 0.95rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.zone-select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-muted);
+}
+
+/* Records Table */
+.records-section {
+    margin-top: 24px;
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.section-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+}
+
+.btn-sync {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-sync:hover {
+    background: var(--bg-elevated);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+}
+
+.records-table {
+    width: 100%;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.records-table th {
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.records-table td {
+    padding: 14px 16px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-subtle);
+    vertical-align: middle;
+}
+
+.records-table tr:last-child td {
+    border-bottom: none;
+}
+
+.records-table .type-cell {
+    width: 70px;
+}
+
+.record-type-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    text-align: center;
+    min-width: 45px;
+}
+
+.record-type-badge.type-a { background: rgba(99, 102, 241, 0.1); color: #6366f1; }
+.record-type-badge.type-cname { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+.record-type-badge.type-mx { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+.record-type-badge.type-txt { background: rgba(139, 92, 246, 0.1); color: #8b5cf6; }
+
+.name-cell {
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+}
+
+.content-cell {
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-size: 0.85rem;
+    max-width: 300px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.proxied-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.proxied-badge.proxied {
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+}
+
+.proxied-badge.dns-only {
+    background: var(--bg-elevated);
+    color: var(--text-tertiary);
+}
+
+/* Empty State */
+.empty-records {
+    padding: 48px 24px;
+    text-align: center;
+}
+
+.empty-records-icon {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 16px;
+    background: var(--bg-elevated);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+}
+
+.empty-records-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.empty-records-text {
+    font-size: 0.9rem;
+    color: var(--text-tertiary);
+}
+
+/* Disconnect Section */
+.disconnect-section {
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-subtle);
+}
+
+.disconnect-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.disconnect-text {
+    font-size: 0.85rem;
+    color: var(--text-tertiary);
+    margin-bottom: 16px;
+}
+
+.btn-disconnect {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--error);
+    background: transparent;
+    border: 1px solid var(--error);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-disconnect:hover {
+    background: var(--error);
+    color: white;
+}
+
+/* Last sync info */
+.sync-info {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 12px;
+}
+
+/* Zone info */
+.zone-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    margin-bottom: 24px;
+}
+
+.zone-info-icon {
+    width: 40px;
+    height: 40px;
+    background: var(--primary-muted);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary);
+}
+
+.zone-info-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.zone-info-id {
+    font-size: 0.8rem;
+    color: var(--text-tertiary);
+    font-family: 'SF Mono', Monaco, monospace;
+}
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="cf-card">
+    <div class="cf-card-header">
+        <div class="cf-card-header-left">
+            <div class="cf-card-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                    <path d="M2 17l10 5 10-5"/>
+                    <path d="M2 12l10 5 10-5"/>
+                </svg>
+            </div>
+            <div>
+                <div class="cf-card-title">Cloudflare DNS</div>
+                <div class="cf-card-subtitle">Manage your domain's DNS records</div>
+            </div>
+        </div>
+        <div class="connection-status connected">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Connected
+        </div>
+    </div>
+
+    <div class="cf-card-body">
+        {% if zones and zones|length > 0 %}
+        <!-- Zone Selector -->
+        <form method="POST" action="{{ url_for('cloudflare.confirm_submit') }}" class="zone-selector">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="zone-label">Select Domain</label>
+            <select name="zone_id" class="zone-select" onchange="this.form.submit()">
+                <option value="">-- Select a zone --</option>
+                {% for zone in zones %}
+                <option value="{{ zone.id }}" {% if connection.cloudflare_zone_id == zone.id %}selected{% endif %}>
+                    {{ zone.name }}
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+
+        {% if selected_zone %}
+        <!-- Selected Zone Info -->
+        <div class="zone-info">
+            <div class="zone-info-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="2" y1="12" x2="22" y2="12"/>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+            </div>
+            <div>
+                <div class="zone-info-name">{{ selected_zone.name }}</div>
+                <div class="zone-info-id">Zone ID: {{ selected_zone.id }}</div>
+            </div>
+        </div>
+
+        <!-- DNS Records -->
+        <div class="records-section">
+            <div class="section-header">
+                <span class="section-title">DNS Records</span>
+                <form method="POST" action="{{ url_for('cloudflare.confirm_submit') }}" style="display: inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="sync">
+                    <button type="submit" class="btn-sync">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <polyline points="1 20 1 14 7 14"/>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                        </svg>
+                        Sync Records
+                    </button>
+                </form>
+            </div>
+
+            {% if records %}
+            <table class="records-table">
+                <thead>
+                    <tr>
+                        <th class="type-cell">Type</th>
+                        <th>Name</th>
+                        <th>Content</th>
+                        <th>Proxy</th>
+                        <th>TTL</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in records %}
+                    <tr>
+                        <td class="type-cell">
+                            <span class="record-type-badge type-{{ record.type|lower }}">{{ record.type }}</span>
+                        </td>
+                        <td class="name-cell">{{ record.name }}</td>
+                        <td class="content-cell" title="{{ record.content }}">{{ record.content }}</td>
+                        <td>
+                            {% if record.proxied %}
+                            <span class="proxied-badge proxied">Proxied</span>
+                            {% else %}
+                            <span class="proxied-badge dns-only">DNS only</span>
+                            {% endif %}
+                        </td>
+                        <td>{% if record.ttl == 1 %}Auto{% else %}{{ record.ttl }}s{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            {% if connection.last_sync_at %}
+            <div class="sync-info">
+                Last synced: {{ connection.last_sync_at.strftime('%Y-%m-%d %H:%M:%S') }}
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="records-table">
+                <div class="empty-records">
+                    <div class="empty-records-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                        </svg>
+                    </div>
+                    <div class="empty-records-title">No DNS Records</div>
+                    <div class="empty-records-text">No A, CNAME, MX, or TXT records found for this zone.</div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="empty-records">
+            <div class="empty-records-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="2" y1="12" x2="22" y2="12"/>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                </svg>
+            </div>
+            <div class="empty-records-title">Select a Domain</div>
+            <div class="empty-records-text">Choose a domain from the dropdown above to view and manage its DNS records.</div>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="empty-records">
+            <div class="empty-records-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+            </div>
+            <div class="empty-records-title">No Zones Found</div>
+            <div class="empty-records-text">Your API token doesn't have access to any zones. Make sure you selected the correct zone when creating the token.</div>
+        </div>
+        {% endif %}
+
+        <!-- Disconnect Section -->
+        <div class="disconnect-section">
+            <div class="disconnect-title">Disconnect Cloudflare</div>
+            <div class="disconnect-text">
+                Remove the connection to your Cloudflare account. Your DNS records will not be affected.
+            </div>
+            <form method="POST" action="{{ url_for('cloudflare.disconnect') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn-disconnect" onclick="return confirm('Are you sure you want to disconnect your Cloudflare account?')">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+                        <line x1="12" y1="2" x2="12" y2="12"/>
+                    </svg>
+                    Disconnect
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
