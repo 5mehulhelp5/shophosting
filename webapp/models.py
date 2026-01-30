@@ -128,7 +128,8 @@ class Customer:
                  server_id=None, quota_project_id=None, db_name=None, db_user=None,
                  db_password=None, admin_user=None, admin_password=None,
                  error_message=None, stripe_customer_id=None, plan_id=None,
-                 staging_count=None, password_changed_at=None, created_at=None, updated_at=None):
+                 staging_count=None, password_changed_at=None, timezone=None,
+                 created_at=None, updated_at=None):
         self.id = id
         self.email = email
         self.password_hash = password_hash
@@ -149,6 +150,7 @@ class Customer:
         self.plan_id = plan_id
         self.staging_count = staging_count or 0
         self.password_changed_at = password_changed_at
+        self.timezone = timezone or 'America/New_York'
         self.created_at = created_at or datetime.now()
         self.updated_at = updated_at or datetime.now()
 
