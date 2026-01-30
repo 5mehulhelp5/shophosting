@@ -7,7 +7,7 @@ import socket
 import requests
 from datetime import datetime, timedelta
 
-from ..models import Server
+from models import Server
 from .models import StatusIncident, StatusMaintenance, StatusOverride
 
 

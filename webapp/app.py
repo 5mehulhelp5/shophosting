@@ -344,6 +344,8 @@ app.register_blueprint(metrics_bp)
 
 # Register status blueprint for public status page
 from status import status_bp
+
+# Register at /status for main site access (shophosting.io/status)
 app.register_blueprint(status_bp, url_prefix='/status')
 
 # Apply rate limiting to admin login (stricter than customer login)

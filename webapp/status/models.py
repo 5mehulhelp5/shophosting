@@ -4,7 +4,7 @@ Handles incidents, maintenance windows, and status tracking
 """
 
 from datetime import datetime, timedelta
-from ..models import get_db_connection
+from models import get_db_connection
 
 
 class StatusIncident:
