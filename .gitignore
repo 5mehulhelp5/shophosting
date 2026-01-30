@@ -11,6 +11,7 @@
 *.secret
 secrets/
 .restic-password
+test-promo-codes.txt
 
 # Virtual environments
 venv/
