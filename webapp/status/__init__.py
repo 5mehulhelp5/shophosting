@@ -1,8 +1,11 @@
 """
-Status Page Module
+Status Page Blueprint
 Public status page showing system health
 """
 
-from .models import StatusIncident, StatusIncidentUpdate, StatusMaintenance, StatusOverride
+from flask import Blueprint
 
-__all__ = ['StatusIncident', 'StatusIncidentUpdate', 'StatusMaintenance', 'StatusOverride']
+status_bp = Blueprint('status', __name__, template_folder='../templates/status')
+
+from . import routes
+from .models import StatusIncident, StatusIncidentUpdate, StatusMaintenance, StatusOverride
