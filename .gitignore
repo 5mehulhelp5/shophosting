@@ -63,3 +63,4 @@ openproject/
 
 # Wiki.js (local instance, contains secrets)
 wikijs/
+.worktrees/
