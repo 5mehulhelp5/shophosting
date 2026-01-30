@@ -128,7 +128,8 @@ class Customer:
                  server_id=None, quota_project_id=None, db_name=None, db_user=None,
                  db_password=None, admin_user=None, admin_password=None,
                  error_message=None, stripe_customer_id=None, plan_id=None,
-                 staging_count=None, password_changed_at=None, created_at=None, updated_at=None):
+                 staging_count=None, password_changed_at=None, timezone=None,
+                 created_at=None, updated_at=None):
         self.id = id
         self.email = email
         self.password_hash = password_hash
@@ -149,6 +150,7 @@ class Customer:
         self.plan_id = plan_id
         self.staging_count = staging_count or 0
         self.password_changed_at = password_changed_at
+        self.timezone = timezone or 'America/New_York'
         self.created_at = created_at or datetime.now()
         self.updated_at = updated_at or datetime.now()
 
@@ -176,6 +178,46 @@ class Customer:
             """, (self.password_hash, self.id))
             conn.commit()
             self.password_changed_at = datetime.now()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update_profile(self, company_name=None, timezone=None):
+        """Update customer profile information"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            updates = []
+            values = []
+            if company_name is not None:
+                updates.append("company_name = %s")
+                values.append(company_name)
+                self.company_name = company_name
+            if timezone is not None:
+                updates.append("timezone = %s")
+                values.append(timezone)
+                self.timezone = timezone
+
+            if updates:
+                values.append(self.id)
+                cursor.execute(f"""
+                    UPDATE customers SET {', '.join(updates)} WHERE id = %s
+                """, values)
+                conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update_email(self, new_email):
+        """Update customer email"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE customers SET email = %s WHERE id = %s
+            """, (new_email, self.id))
+            conn.commit()
+            self.email = new_email
         finally:
             cursor.close()
             conn.close()
@@ -3621,3 +3663,535 @@ class CustomerVerificationToken:
 
     def __repr__(self):
         return f"<CustomerVerificationToken {self.id}: {self.token_type} for customer {self.customer_id}>"
+
+
+class CustomerNotificationSettings:
+    """Notification preferences for a customer"""
+    def __init__(self, id=None, customer_id=None, email_security_alerts=True,
+                 email_login_alerts=True, email_billing_alerts=True,
+                 email_maintenance_alerts=True, email_marketing=False,
+                 created_at=None, updated_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.email_security_alerts = email_security_alerts
+        self.email_login_alerts = email_login_alerts
+        self.email_billing_alerts = email_billing_alerts
+        self.email_maintenance_alerts = email_maintenance_alerts
+        self.email_marketing = email_marketing
+        self.created_at = created_at
+        self.updated_at = updated_at
+
+    @staticmethod
+    def get_or_create(customer_id):
+        """Get existing settings or create defaults"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_notification_settings WHERE customer_id = %s
+            """, (customer_id,))
+            row = cursor.fetchone()
+            if row:
+                return CustomerNotificationSettings(**row)
+
+            # Create defaults
+            cursor.execute("""
+                INSERT INTO customer_notification_settings (customer_id) VALUES (%s)
+            """, (customer_id,))
+            conn.commit()
+            return CustomerNotificationSettings(id=cursor.lastrowid, customer_id=customer_id)
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update(self, **kwargs):
+        """Update notification settings"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            fields = []
+            values = []
+            for key, value in kwargs.items():
+                if hasattr(self, key):
+                    fields.append(f"{key} = %s")
+                    values.append(value)
+                    setattr(self, key, value)
+
+            if fields:
+                values.append(self.customer_id)
+                cursor.execute(f"""
+                    UPDATE customer_notification_settings
+                    SET {', '.join(fields)}
+                    WHERE customer_id = %s
+                """, values)
+                conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<CustomerNotificationSettings customer_id={self.customer_id}>"
+
+
+class CustomerApiKey:
+    """API key for programmatic access"""
+    def __init__(self, id=None, customer_id=None, name=None, key_prefix=None,
+                 key_hash=None, scopes=None, last_used_at=None, expires_at=None,
+                 is_active=True, created_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.name = name
+        self.key_prefix = key_prefix
+        self.key_hash = key_hash
+        self.scopes = scopes
+        self.last_used_at = last_used_at
+        self.expires_at = expires_at
+        self.is_active = is_active
+        self.created_at = created_at
+
+    @staticmethod
+    def create(customer_id, name, scopes=None, expires_days=None):
+        """Create a new API key, returns (ApiKey, raw_key)"""
+        import secrets
+        import hashlib
+
+        # Generate key: prefix_randompart
+        prefix = secrets.token_hex(4)
+        secret_part = secrets.token_hex(24)
+        raw_key = f"shk_{prefix}_{secret_part}"
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            expires_at = None
+            if expires_days:
+                cursor.execute("SELECT DATE_ADD(NOW(), INTERVAL %s DAY)", (expires_days,))
+                expires_at = cursor.fetchone()[0]
+
+            cursor.execute("""
+                INSERT INTO customer_api_keys
+                (customer_id, name, key_prefix, key_hash, scopes, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (customer_id, name, prefix, key_hash, scopes, expires_at))
+            conn.commit()
+
+            api_key = CustomerApiKey(
+                id=cursor.lastrowid,
+                customer_id=customer_id,
+                name=name,
+                key_prefix=prefix,
+                key_hash=key_hash,
+                scopes=scopes,
+                expires_at=expires_at,
+                is_active=True
+            )
+            return api_key, raw_key
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def verify(raw_key):
+        """Verify an API key and return the associated record"""
+        import hashlib
+        if not raw_key or not raw_key.startswith('shk_'):
+            return None
+
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_api_keys
+                WHERE key_hash = %s AND is_active = TRUE
+                AND (expires_at IS NULL OR expires_at > NOW())
+            """, (key_hash,))
+            row = cursor.fetchone()
+            if row:
+                # Update last used
+                cursor.execute("""
+                    UPDATE customer_api_keys SET last_used_at = NOW() WHERE id = %s
+                """, (row['id'],))
+                conn.commit()
+                return CustomerApiKey(**row)
+            return None
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_customer(customer_id, include_inactive=False):
+        """Get all API keys for a customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            if include_inactive:
+                cursor.execute("""
+                    SELECT * FROM customer_api_keys
+                    WHERE customer_id = %s ORDER BY created_at DESC
+                """, (customer_id,))
+            else:
+                cursor.execute("""
+                    SELECT * FROM customer_api_keys
+                    WHERE customer_id = %s AND is_active = TRUE
+                    ORDER BY created_at DESC
+                """, (customer_id,))
+            return [CustomerApiKey(**row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+            conn.close()
+
+    def revoke(self):
+        """Revoke this API key"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE customer_api_keys SET is_active = FALSE WHERE id = %s
+            """, (self.id,))
+            conn.commit()
+            self.is_active = False
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<CustomerApiKey {self.id}: {self.name} for customer {self.customer_id}>"
+
+
+class CustomerWebhook:
+    """Webhook configuration for event notifications"""
+    VALID_EVENTS = ['backup.completed', 'backup.failed', 'site.down', 'site.up',
+                    'ssl.expiring', 'resource.warning', 'login.new_device']
+
+    def __init__(self, id=None, customer_id=None, name=None, url=None, secret=None,
+                 events=None, is_active=True, failure_count=0, last_triggered_at=None,
+                 last_success_at=None, last_failure_at=None, last_failure_reason=None,
+                 created_at=None, updated_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.name = name
+        self.url = url
+        self.secret = secret
+        self.events = events  # JSON string
+        self.is_active = is_active
+        self.failure_count = failure_count
+        self.last_triggered_at = last_triggered_at
+        self.last_success_at = last_success_at
+        self.last_failure_at = last_failure_at
+        self.last_failure_reason = last_failure_reason
+        self.created_at = created_at
+        self.updated_at = updated_at
+
+    @staticmethod
+    def create(customer_id, name, url, events):
+        """Create a new webhook"""
+        import secrets
+        import json
+
+        secret = secrets.token_hex(32)
+        events_json = json.dumps(events) if isinstance(events, list) else events
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO customer_webhooks
+                (customer_id, name, url, secret, events)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (customer_id, name, url, secret, events_json))
+            conn.commit()
+            return CustomerWebhook(
+                id=cursor.lastrowid,
+                customer_id=customer_id,
+                name=name,
+                url=url,
+                secret=secret,
+                events=events_json,
+                is_active=True
+            )
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_customer(customer_id, include_inactive=False):
+        """Get all webhooks for a customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            if include_inactive:
+                cursor.execute("""
+                    SELECT * FROM customer_webhooks
+                    WHERE customer_id = %s ORDER BY created_at DESC
+                """, (customer_id,))
+            else:
+                cursor.execute("""
+                    SELECT * FROM customer_webhooks
+                    WHERE customer_id = %s AND is_active = TRUE
+                    ORDER BY created_at DESC
+                """, (customer_id,))
+            return [CustomerWebhook(**row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_id(webhook_id):
+        """Get webhook by ID"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("SELECT * FROM customer_webhooks WHERE id = %s", (webhook_id,))
+            row = cursor.fetchone()
+            return CustomerWebhook(**row) if row else None
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update(self, **kwargs):
+        """Update webhook settings"""
+        import json
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            fields = []
+            values = []
+            for key, value in kwargs.items():
+                if hasattr(self, key):
+                    if key == 'events' and isinstance(value, list):
+                        value = json.dumps(value)
+                    fields.append(f"{key} = %s")
+                    values.append(value)
+                    setattr(self, key, value)
+
+            if fields:
+                values.append(self.id)
+                cursor.execute(f"""
+                    UPDATE customer_webhooks
+                    SET {', '.join(fields)}
+                    WHERE id = %s
+                """, values)
+                conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def delete(self):
+        """Delete this webhook"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM customer_webhooks WHERE id = %s", (self.id,))
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def record_trigger(self, success, failure_reason=None):
+        """Record a webhook trigger attempt"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            if success:
+                cursor.execute("""
+                    UPDATE customer_webhooks
+                    SET last_triggered_at = NOW(), last_success_at = NOW(),
+                        failure_count = 0
+                    WHERE id = %s
+                """, (self.id,))
+            else:
+                cursor.execute("""
+                    UPDATE customer_webhooks
+                    SET last_triggered_at = NOW(), last_failure_at = NOW(),
+                        failure_count = failure_count + 1, last_failure_reason = %s
+                    WHERE id = %s
+                """, (failure_reason, self.id))
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<CustomerWebhook {self.id}: {self.name} for customer {self.customer_id}>"
+
+
+class CustomerDataExport:
+    """Data export request for GDPR compliance"""
+    def __init__(self, id=None, customer_id=None, status='pending', file_path=None,
+                 file_size_bytes=None, expires_at=None, error_message=None,
+                 requested_at=None, completed_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.status = status
+        self.file_path = file_path
+        self.file_size_bytes = file_size_bytes
+        self.expires_at = expires_at
+        self.error_message = error_message
+        self.requested_at = requested_at
+        self.completed_at = completed_at
+
+    @staticmethod
+    def create(customer_id):
+        """Create a new data export request"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            # Check for existing pending/processing request
+            cursor.execute("""
+                SELECT id FROM customer_data_exports
+                WHERE customer_id = %s AND status IN ('pending', 'processing')
+            """, (customer_id,))
+            if cursor.fetchone():
+                return None  # Already has pending request
+
+            cursor.execute("""
+                INSERT INTO customer_data_exports (customer_id) VALUES (%s)
+            """, (customer_id,))
+            conn.commit()
+            return CustomerDataExport(id=cursor.lastrowid, customer_id=customer_id, status='pending')
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_customer(customer_id, limit=5):
+        """Get recent export requests for a customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_data_exports
+                WHERE customer_id = %s
+                ORDER BY requested_at DESC LIMIT %s
+            """, (customer_id, limit))
+            return [CustomerDataExport(**row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_id(export_id):
+        """Get export by ID"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("SELECT * FROM customer_data_exports WHERE id = %s", (export_id,))
+            row = cursor.fetchone()
+            return CustomerDataExport(**row) if row else None
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update_status(self, status, file_path=None, file_size_bytes=None, error_message=None):
+        """Update export status"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            if status == 'completed':
+                cursor.execute("""
+                    UPDATE customer_data_exports
+                    SET status = %s, file_path = %s, file_size_bytes = %s,
+                        completed_at = NOW(), expires_at = DATE_ADD(NOW(), INTERVAL 7 DAY)
+                    WHERE id = %s
+                """, (status, file_path, file_size_bytes, self.id))
+            elif status == 'failed':
+                cursor.execute("""
+                    UPDATE customer_data_exports
+                    SET status = %s, error_message = %s, completed_at = NOW()
+                    WHERE id = %s
+                """, (status, error_message, self.id))
+            else:
+                cursor.execute("""
+                    UPDATE customer_data_exports SET status = %s WHERE id = %s
+                """, (status, self.id))
+            conn.commit()
+            self.status = status
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<CustomerDataExport {self.id}: {self.status} for customer {self.customer_id}>"
+
+
+class CustomerDeletionRequest:
+    """Account deletion request"""
+    def __init__(self, id=None, customer_id=None, reason=None, scheduled_at=None,
+                 cancelled_at=None, executed_at=None, created_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.reason = reason
+        self.scheduled_at = scheduled_at
+        self.cancelled_at = cancelled_at
+        self.executed_at = executed_at
+        self.created_at = created_at
+
+    @staticmethod
+    def create(customer_id, reason=None, delay_days=14):
+        """Create a deletion request scheduled for future"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            # Cancel any existing request first
+            cursor.execute("""
+                DELETE FROM customer_deletion_requests
+                WHERE customer_id = %s AND executed_at IS NULL
+            """, (customer_id,))
+
+            cursor.execute("""
+                INSERT INTO customer_deletion_requests
+                (customer_id, reason, scheduled_at)
+                VALUES (%s, %s, DATE_ADD(NOW(), INTERVAL %s DAY))
+            """, (customer_id, reason, delay_days))
+            conn.commit()
+
+            cursor.execute("SELECT scheduled_at FROM customer_deletion_requests WHERE id = %s",
+                          (cursor.lastrowid,))
+            scheduled_at = cursor.fetchone()[0]
+
+            return CustomerDeletionRequest(
+                id=cursor.lastrowid,
+                customer_id=customer_id,
+                reason=reason,
+                scheduled_at=scheduled_at
+            )
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_customer(customer_id):
+        """Get active deletion request for customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_deletion_requests
+                WHERE customer_id = %s AND cancelled_at IS NULL AND executed_at IS NULL
+            """, (customer_id,))
+            row = cursor.fetchone()
+            return CustomerDeletionRequest(**row) if row else None
+        finally:
+            cursor.close()
+            conn.close()
+
+    def cancel(self):
+        """Cancel this deletion request"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE customer_deletion_requests
+                SET cancelled_at = NOW() WHERE id = %s
+            """, (self.id,))
+            conn.commit()
+            self.cancelled_at = datetime.now()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<CustomerDeletionRequest {self.id} for customer {self.customer_id}>"

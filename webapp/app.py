@@ -34,6 +34,8 @@ from models import Ticket, TicketMessage, TicketAttachment, TicketCategory, Cons
 from models import StagingEnvironment, StagingPortManager
 from models import CustomerBackupJob
 from models import Customer2FASettings, CustomerLoginHistory, CustomerVerificationToken
+from models import CustomerNotificationSettings, CustomerApiKey, CustomerWebhook
+from models import CustomerDataExport, CustomerDeletionRequest
 import pyotp
 import hashlib
 import secrets
@@ -766,6 +768,7 @@ def auth_2fa():
 
 
 @app.route('/auth/2fa/verify', methods=['POST'])
+@csrf.exempt
 @limiter.limit("5 per minute")
 def auth_2fa_verify():
     """Verify 2FA code during login"""
@@ -849,6 +852,7 @@ def auth_2fa_verify():
 
 
 @app.route('/auth/2fa/recovery/send', methods=['POST'])
+@csrf.exempt
 @limiter.limit("3 per hour")
 def auth_2fa_recovery_send():
     """Send 2FA recovery code via email"""
@@ -884,6 +888,7 @@ def auth_2fa_recovery_send():
 
 
 @app.route('/auth/2fa/recovery/verify', methods=['POST'])
+@csrf.exempt
 @limiter.limit("5 per minute")
 def auth_2fa_recovery_verify():
     """Verify email recovery code"""
@@ -1267,11 +1272,31 @@ def dashboard_settings():
         current_session_id=current_session_id
     )
 
+    # Phase 2 data
+    notification_settings = CustomerNotificationSettings.get_or_create(current_user.id)
+    api_keys = CustomerApiKey.get_by_customer(current_user.id)
+    webhooks = CustomerWebhook.get_by_customer(current_user.id)
+    deletion_request = CustomerDeletionRequest.get_by_customer(current_user.id)
+
+    # Common timezones for dropdown
+    common_timezones = [
+        'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+        'America/Toronto', 'America/Vancouver', 'Europe/London', 'Europe/Paris',
+        'Europe/Berlin', 'Europe/Amsterdam', 'Asia/Tokyo', 'Asia/Shanghai',
+        'Asia/Singapore', 'Australia/Sydney', 'Pacific/Auckland', 'UTC'
+    ]
+
     return render_template('dashboard/settings.html',
                           customer=customer,
                           tfa_settings=tfa_settings,
                           login_history=login_history,
                           active_sessions=active_sessions,
+                          notification_settings=notification_settings,
+                          api_keys=api_keys,
+                          webhooks=webhooks,
+                          deletion_request=deletion_request,
+                          common_timezones=common_timezones,
+                          webhook_events=CustomerWebhook.VALID_EVENTS,
                           active_page='settings')
 
 
@@ -1533,6 +1558,492 @@ def api_settings_login_history():
             'created_at': h.created_at.isoformat() if h.created_at else None
         } for h in history]
     })
+
+
+# =============================================================================
+# Settings API Routes - Phase 2 (Profile, Notifications, API Keys, Webhooks)
+# =============================================================================
+
+@app.route('/api/settings/profile', methods=['POST'])
+@csrf.exempt
+@login_required
+def api_settings_profile():
+    """Update profile information"""
+    data = request.get_json()
+    company_name = data.get('company_name')
+    timezone = data.get('timezone')
+
+    customer = Customer.get_by_id(current_user.id)
+    customer.update_profile(company_name=company_name, timezone=timezone)
+
+    return jsonify({'success': True, 'message': 'Profile updated successfully'})
+
+
+@app.route('/api/settings/email/change', methods=['POST'])
+@csrf.exempt
+@login_required
+@limiter.limit("3 per hour")
+def api_settings_email_change():
+    """Request email change - sends verification to new email"""
+    data = request.get_json()
+    new_email = data.get('new_email', '').strip().lower()
+    password = data.get('password', '')
+
+    if not new_email or not password:
+        return jsonify({'success': False, 'error': 'Email and password are required'}), 400
+
+    # Validate email format
+    import re
+    if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', new_email):
+        return jsonify({'success': False, 'error': 'Invalid email format'}), 400
+
+    customer = Customer.get_by_id(current_user.id)
+
+    if not customer.check_password(password):
+        return jsonify({'success': False, 'error': 'Incorrect password'}), 401
+
+    if new_email == customer.email:
+        return jsonify({'success': False, 'error': 'New email must be different'}), 400
+
+    # Check if email already exists
+    existing = Customer.get_by_email(new_email)
+    if existing:
+        return jsonify({'success': False, 'error': 'Email already in use'}), 400
+
+    # Generate verification token
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+    CustomerVerificationToken.create(
+        customer_id=current_user.id,
+        token=token_hash,
+        token_type='email_change',
+        new_value=new_email,
+        expires_minutes=60
+    )
+
+    # Send verification email to new address
+    try:
+        from email_utils import send_email_change_verification
+        send_email_change_verification(new_email, token)
+        return jsonify({'success': True, 'message': 'Verification email sent to new address'})
+    except Exception as e:
+        logger.error(f"Failed to send email change verification: {e}")
+        return jsonify({'success': False, 'error': 'Failed to send verification email'}), 500
+
+
+@app.route('/api/settings/email/verify', methods=['POST'])
+@csrf.exempt
+@limiter.limit("5 per hour")
+def api_settings_email_verify():
+    """Verify email change token"""
+    data = request.get_json()
+    token = data.get('token', '')
+
+    if not token:
+        return jsonify({'success': False, 'error': 'Token is required'}), 400
+
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    verification = CustomerVerificationToken.verify(token_hash, 'email_change')
+
+    if not verification:
+        return jsonify({'success': False, 'error': 'Invalid or expired token'}), 400
+
+    # Update the email
+    customer = Customer.get_by_id(verification.customer_id)
+    old_email = customer.email
+    customer.update_email(verification.new_value)
+    verification.mark_used()
+
+    security_logger.info(f"Email changed for customer {verification.customer_id}: {old_email} -> {verification.new_value}")
+
+    return jsonify({'success': True, 'message': 'Email updated successfully'})
+
+
+@app.route('/api/settings/notifications', methods=['GET'])
+@login_required
+def api_settings_notifications_get():
+    """Get notification preferences"""
+    settings = CustomerNotificationSettings.get_or_create(current_user.id)
+
+    return jsonify({
+        'success': True,
+        'settings': {
+            'email_security_alerts': settings.email_security_alerts,
+            'email_login_alerts': settings.email_login_alerts,
+            'email_billing_alerts': settings.email_billing_alerts,
+            'email_maintenance_alerts': settings.email_maintenance_alerts,
+            'email_marketing': settings.email_marketing
+        }
+    })
+
+
+@app.route('/api/settings/notifications', methods=['POST'])
+@csrf.exempt
+@login_required
+def api_settings_notifications_update():
+    """Update notification preferences"""
+    data = request.get_json()
+    settings = CustomerNotificationSettings.get_or_create(current_user.id)
+
+    # Update only provided fields
+    update_fields = {}
+    for field in ['email_security_alerts', 'email_login_alerts', 'email_billing_alerts',
+                  'email_maintenance_alerts', 'email_marketing']:
+        if field in data:
+            update_fields[field] = bool(data[field])
+
+    settings.update(**update_fields)
+
+    return jsonify({'success': True, 'message': 'Notification preferences updated'})
+
+
+@app.route('/api/settings/api-keys', methods=['GET'])
+@login_required
+def api_settings_api_keys_list():
+    """List API keys"""
+    keys = CustomerApiKey.get_by_customer(current_user.id)
+
+    return jsonify({
+        'success': True,
+        'keys': [{
+            'id': k.id,
+            'name': k.name,
+            'key_prefix': f"shk_{k.key_prefix}_...",
+            'created_at': k.created_at.isoformat() if k.created_at else None,
+            'last_used_at': k.last_used_at.isoformat() if k.last_used_at else None,
+            'expires_at': k.expires_at.isoformat() if k.expires_at else None
+        } for k in keys]
+    })
+
+
+@app.route('/api/settings/api-keys', methods=['POST'])
+@csrf.exempt
+@login_required
+@limiter.limit("10 per hour")
+def api_settings_api_keys_create():
+    """Create a new API key"""
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    expires_days = data.get('expires_days')
+
+    if not name:
+        return jsonify({'success': False, 'error': 'Name is required'}), 400
+
+    if len(name) > 100:
+        return jsonify({'success': False, 'error': 'Name too long (max 100 chars)'}), 400
+
+    # Check limit (max 10 active keys)
+    existing = CustomerApiKey.get_by_customer(current_user.id)
+    if len(existing) >= 10:
+        return jsonify({'success': False, 'error': 'Maximum 10 API keys allowed'}), 400
+
+    api_key, raw_key = CustomerApiKey.create(
+        customer_id=current_user.id,
+        name=name,
+        expires_days=expires_days
+    )
+
+    security_logger.info(f"API key created for customer {current_user.id}: {name}")
+
+    return jsonify({
+        'success': True,
+        'key': {
+            'id': api_key.id,
+            'name': api_key.name,
+            'key': raw_key,  # Only shown once!
+            'created_at': api_key.created_at.isoformat() if api_key.created_at else None
+        },
+        'message': 'API key created. Save it now - it won\'t be shown again!'
+    })
+
+
+@app.route('/api/settings/api-keys/<int:key_id>', methods=['DELETE'])
+@csrf.exempt
+@login_required
+def api_settings_api_keys_revoke(key_id):
+    """Revoke an API key"""
+    keys = CustomerApiKey.get_by_customer(current_user.id)
+    key = next((k for k in keys if k.id == key_id), None)
+
+    if not key:
+        return jsonify({'success': False, 'error': 'API key not found'}), 404
+
+    key.revoke()
+    security_logger.info(f"API key revoked for customer {current_user.id}: {key.name}")
+
+    return jsonify({'success': True, 'message': 'API key revoked'})
+
+
+@app.route('/api/settings/webhooks', methods=['GET'])
+@login_required
+def api_settings_webhooks_list():
+    """List webhooks"""
+    webhooks = CustomerWebhook.get_by_customer(current_user.id)
+
+    return jsonify({
+        'success': True,
+        'webhooks': [{
+            'id': w.id,
+            'name': w.name,
+            'url': w.url,
+            'events': json.loads(w.events) if w.events else [],
+            'is_active': w.is_active,
+            'failure_count': w.failure_count,
+            'last_triggered_at': w.last_triggered_at.isoformat() if w.last_triggered_at else None,
+            'created_at': w.created_at.isoformat() if w.created_at else None
+        } for w in webhooks],
+        'available_events': CustomerWebhook.VALID_EVENTS
+    })
+
+
+@app.route('/api/settings/webhooks', methods=['POST'])
+@csrf.exempt
+@login_required
+@limiter.limit("10 per hour")
+def api_settings_webhooks_create():
+    """Create a new webhook"""
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    url = data.get('url', '').strip()
+    events = data.get('events', [])
+
+    if not name or not url:
+        return jsonify({'success': False, 'error': 'Name and URL are required'}), 400
+
+    if not url.startswith('https://'):
+        return jsonify({'success': False, 'error': 'URL must use HTTPS'}), 400
+
+    if not events:
+        return jsonify({'success': False, 'error': 'At least one event is required'}), 400
+
+    # Validate events
+    invalid_events = [e for e in events if e not in CustomerWebhook.VALID_EVENTS]
+    if invalid_events:
+        return jsonify({'success': False, 'error': f'Invalid events: {invalid_events}'}), 400
+
+    # Check limit (max 5 webhooks)
+    existing = CustomerWebhook.get_by_customer(current_user.id)
+    if len(existing) >= 5:
+        return jsonify({'success': False, 'error': 'Maximum 5 webhooks allowed'}), 400
+
+    webhook = CustomerWebhook.create(
+        customer_id=current_user.id,
+        name=name,
+        url=url,
+        events=events
+    )
+
+    return jsonify({
+        'success': True,
+        'webhook': {
+            'id': webhook.id,
+            'name': webhook.name,
+            'secret': webhook.secret  # Only shown once!
+        },
+        'message': 'Webhook created. Save the secret - it won\'t be shown again!'
+    })
+
+
+@app.route('/api/settings/webhooks/<int:webhook_id>', methods=['PUT'])
+@csrf.exempt
+@login_required
+def api_settings_webhooks_update(webhook_id):
+    """Update a webhook"""
+    webhook = CustomerWebhook.get_by_id(webhook_id)
+
+    if not webhook or webhook.customer_id != current_user.id:
+        return jsonify({'success': False, 'error': 'Webhook not found'}), 404
+
+    data = request.get_json()
+    update_fields = {}
+
+    if 'name' in data:
+        update_fields['name'] = data['name'].strip()
+    if 'url' in data:
+        url = data['url'].strip()
+        if not url.startswith('https://'):
+            return jsonify({'success': False, 'error': 'URL must use HTTPS'}), 400
+        update_fields['url'] = url
+    if 'events' in data:
+        events = data['events']
+        invalid_events = [e for e in events if e not in CustomerWebhook.VALID_EVENTS]
+        if invalid_events:
+            return jsonify({'success': False, 'error': f'Invalid events: {invalid_events}'}), 400
+        update_fields['events'] = events
+    if 'is_active' in data:
+        update_fields['is_active'] = bool(data['is_active'])
+
+    webhook.update(**update_fields)
+
+    return jsonify({'success': True, 'message': 'Webhook updated'})
+
+
+@app.route('/api/settings/webhooks/<int:webhook_id>', methods=['DELETE'])
+@csrf.exempt
+@login_required
+def api_settings_webhooks_delete(webhook_id):
+    """Delete a webhook"""
+    webhook = CustomerWebhook.get_by_id(webhook_id)
+
+    if not webhook or webhook.customer_id != current_user.id:
+        return jsonify({'success': False, 'error': 'Webhook not found'}), 404
+
+    webhook.delete()
+
+    return jsonify({'success': True, 'message': 'Webhook deleted'})
+
+
+@app.route('/api/settings/data-export', methods=['POST'])
+@csrf.exempt
+@login_required
+@limiter.limit("3 per day")
+def api_settings_data_export():
+    """Request a data export (GDPR)"""
+    from background_tasks import run_task, process_data_export
+
+    # Check for existing pending export and re-trigger it
+    existing_exports = CustomerDataExport.get_by_customer(current_user.id, limit=1)
+    if existing_exports and existing_exports[0].status == 'pending':
+        export = existing_exports[0]
+        run_task(process_data_export, export.id, current_user.id)
+        return jsonify({
+            'success': True,
+            'message': 'Export already requested. Processing has been started.',
+            'export_id': export.id
+        })
+
+    export = CustomerDataExport.create(current_user.id)
+
+    if not export:
+        return jsonify({'success': False, 'error': 'Export already in progress'}), 400
+
+    # Start background export task
+    run_task(process_data_export, export.id, current_user.id)
+
+    return jsonify({
+        'success': True,
+        'message': 'Data export requested. You will receive an email when it\'s ready.',
+        'export_id': export.id
+    })
+
+
+@app.route('/api/settings/data-export', methods=['GET'])
+@login_required
+def api_settings_data_export_list():
+    """List data export requests"""
+    exports = CustomerDataExport.get_by_customer(current_user.id)
+
+    return jsonify({
+        'success': True,
+        'exports': [{
+            'id': e.id,
+            'status': e.status,
+            'file_size_bytes': e.file_size_bytes,
+            'requested_at': e.requested_at.isoformat() if e.requested_at else None,
+            'completed_at': e.completed_at.isoformat() if e.completed_at else None,
+            'expires_at': e.expires_at.isoformat() if e.expires_at else None
+        } for e in exports]
+    })
+
+
+@app.route('/dashboard/settings/export/download')
+@login_required
+def settings_export_download():
+    """Download a data export file"""
+    from background_tasks import verify_download_token, EXPORT_DIR
+
+    token = request.args.get('token', '')
+    if not token:
+        flash('Invalid download link', 'error')
+        return redirect(url_for('dashboard_settings'))
+
+    export = verify_download_token(token, current_user.id)
+    if not export:
+        flash('Invalid or expired download link', 'error')
+        return redirect(url_for('dashboard_settings'))
+
+    if not export.file_path:
+        flash('Export file not found', 'error')
+        return redirect(url_for('dashboard_settings'))
+
+    filepath = os.path.join(EXPORT_DIR, export.file_path)
+    if not os.path.exists(filepath):
+        flash('Export file no longer available', 'error')
+        return redirect(url_for('dashboard_settings'))
+
+    return send_file(
+        filepath,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=f'shophosting_data_export_{current_user.id}.zip'
+    )
+
+
+@app.route('/api/settings/account/delete', methods=['POST'])
+@csrf.exempt
+@login_required
+@limiter.limit("3 per day")
+def api_settings_account_delete():
+    """Request account deletion"""
+    data = request.get_json()
+    password = data.get('password', '')
+    reason = data.get('reason', '')
+
+    if not password:
+        return jsonify({'success': False, 'error': 'Password is required'}), 400
+
+    customer = Customer.get_by_id(current_user.id)
+
+    if not customer.check_password(password):
+        return jsonify({'success': False, 'error': 'Incorrect password'}), 401
+
+    deletion = CustomerDeletionRequest.create(
+        customer_id=current_user.id,
+        reason=reason,
+        delay_days=14
+    )
+
+    security_logger.warning(f"Account deletion requested for customer {current_user.id}")
+
+    return jsonify({
+        'success': True,
+        'message': 'Account deletion scheduled',
+        'scheduled_at': deletion.scheduled_at.isoformat()
+    })
+
+
+@app.route('/api/settings/account/delete', methods=['GET'])
+@login_required
+def api_settings_account_delete_status():
+    """Get account deletion status"""
+    deletion = CustomerDeletionRequest.get_by_customer(current_user.id)
+
+    if not deletion:
+        return jsonify({'success': True, 'pending': False})
+
+    return jsonify({
+        'success': True,
+        'pending': True,
+        'scheduled_at': deletion.scheduled_at.isoformat(),
+        'reason': deletion.reason
+    })
+
+
+@app.route('/api/settings/account/delete/cancel', methods=['POST'])
+@csrf.exempt
+@login_required
+def api_settings_account_delete_cancel():
+    """Cancel account deletion"""
+    deletion = CustomerDeletionRequest.get_by_customer(current_user.id)
+
+    if not deletion:
+        return jsonify({'success': False, 'error': 'No pending deletion request'}), 404
+
+    deletion.cancel()
+    security_logger.info(f"Account deletion cancelled for customer {current_user.id}")
+
+    return jsonify({'success': True, 'message': 'Deletion request cancelled'})
 
 
 @app.route('/dashboard/support')
