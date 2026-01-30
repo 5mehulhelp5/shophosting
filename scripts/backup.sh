@@ -72,6 +72,15 @@ mysqldump -h "${DB_HOST:-localhost}" \
 
 log "Master database dump complete: $(du -h "$DB_DUMP_DIR/shophosting_db.sql" | cut -f1)"
 
+# Step 2.5: Dump OpenProject database (if running)
+OPENPROJECT_BACKUP_SCRIPT="/opt/shophosting/openproject/scripts/backup-db.sh"
+if [ -x "$OPENPROJECT_BACKUP_SCRIPT" ]; then
+    log "Dumping OpenProject database..."
+    "$OPENPROJECT_BACKUP_SCRIPT" 2>&1 | tee -a "$BACKUP_LOG" || log "Warning: OpenProject backup failed (container may not be running)"
+else
+    log "OpenProject backup script not found, skipping..."
+fi
+
 # Step 3: Dump all customer databases
 log "Dumping customer databases..."
 for db in $(mysql -h "${DB_HOST:-localhost}" -u "${DB_USER:-shophosting_app}" -p"${DB_PASSWORD}" -N -e "SHOW DATABASES LIKE 'customer_%'"); do
@@ -95,6 +104,7 @@ restic backup \
     /etc/nginx/sites-available \
     /etc/letsencrypt \
     /opt/shophosting/.env \
+    /opt/shophosting/openproject/data \
     2>&1 | tee -a "$BACKUP_LOG" \
     || error_exit "Restic backup failed"
 

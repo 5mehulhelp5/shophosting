@@ -369,6 +369,10 @@ app.register_blueprint(container_metrics_bp)
 from status import status_bp
 app.register_blueprint(status_bp, url_prefix='/status')
 
+# Register Cloudflare DNS management blueprint
+from cloudflare import cloudflare_bp
+app.register_blueprint(cloudflare_bp)
+
 # Apply rate limiting to admin login (stricter than customer login)
 # Admin accounts are high-value targets, so we limit more aggressively
 limiter.limit("3 per minute")(app.view_functions['admin.login'])

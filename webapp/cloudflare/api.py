@@ -1,22 +1,15 @@
 """
 Cloudflare API Wrapper for ShopHosting.io
 
-Provides a client for interacting with Cloudflare's v4 API and OAuth helpers
-for the authorization flow.
+Provides a client for interacting with Cloudflare's v4 API using API tokens.
 """
 
-import os
 import requests
 from urllib.parse import urlencode
 
 
 # API Configuration
 CLOUDFLARE_API_BASE_URL = 'https://api.cloudflare.com/client/v4'
-CLOUDFLARE_OAUTH_AUTHORIZE_URL = 'https://dash.cloudflare.com/oauth2/authorize'
-CLOUDFLARE_OAUTH_TOKEN_URL = 'https://api.cloudflare.com/client/v4/user/tokens/oauth'
-
-# OAuth scopes needed for DNS management
-CLOUDFLARE_OAUTH_SCOPES = 'zone:read dns:read dns:edit'
 
 
 class CloudflareAPIError(Exception):
@@ -45,14 +38,14 @@ class CloudflareAPIError(Exception):
 class CloudflareAPI:
     """Client for interacting with the Cloudflare v4 API."""
 
-    def __init__(self, access_token):
+    def __init__(self, api_token):
         """
         Initialize the Cloudflare API client.
 
         Args:
-            access_token: OAuth access token for authentication
+            api_token: Cloudflare API token for authentication
         """
-        self.access_token = access_token
+        self.api_token = api_token
         self.base_url = CLOUDFLARE_API_BASE_URL
 
     def _request(self, method, endpoint, data=None):
@@ -72,7 +65,7 @@ class CloudflareAPI:
         """
         url = f"{self.base_url}{endpoint}"
         headers = {
-            'Authorization': f'Bearer {self.access_token}',
+            'Authorization': f'Bearer {self.api_token}',
             'Content-Type': 'application/json'
         }
 
@@ -251,174 +244,76 @@ class CloudflareAPI:
         """
         return self._request('DELETE', f'/zones/{zone_id}/dns_records/{record_id}')
 
+    # =========================================================================
+    # Security Settings
+    # =========================================================================
 
-def get_oauth_authorize_url(state):
-    """
-    Build the OAuth authorization URL for Cloudflare.
+    def get_security_level(self, zone_id):
+        """
+        Get the current security level for a zone.
 
-    Args:
-        state: Random state parameter for CSRF protection
+        Args:
+            zone_id: The zone identifier
 
-    Returns:
-        str: The complete OAuth authorization URL
+        Returns:
+            str: Current security level (essentially_off, low, medium, high, under_attack)
 
-    Raises:
-        ValueError: If required environment variables are not set
-    """
-    client_id = os.environ.get('CLOUDFLARE_CLIENT_ID')
-    redirect_uri = os.environ.get('CLOUDFLARE_REDIRECT_URI')
+        Raises:
+            CloudflareAPIError: If the request fails
+        """
+        result = self._request('GET', f'/zones/{zone_id}/settings/security_level')
+        return result.get('value')
 
-    if not client_id:
-        raise ValueError("CLOUDFLARE_CLIENT_ID environment variable is not set")
-    if not redirect_uri:
-        raise ValueError("CLOUDFLARE_REDIRECT_URI environment variable is not set")
+    def set_security_level(self, zone_id, level):
+        """
+        Set the security level for a zone.
 
-    params = {
-        'client_id': client_id,
-        'redirect_uri': redirect_uri,
-        'response_type': 'code',
-        'scope': CLOUDFLARE_OAUTH_SCOPES,
-        'state': state
-    }
+        Args:
+            zone_id: The zone identifier
+            level: Security level - one of:
+                   'essentially_off', 'low', 'medium', 'high', 'under_attack'
 
-    return f"{CLOUDFLARE_OAUTH_AUTHORIZE_URL}?{urlencode(params)}"
+        Returns:
+            dict: Updated setting
 
+        Raises:
+            CloudflareAPIError: If the request fails
+        """
+        valid_levels = ['essentially_off', 'low', 'medium', 'high', 'under_attack']
+        if level not in valid_levels:
+            raise CloudflareAPIError(f'Invalid security level. Must be one of: {", ".join(valid_levels)}')
 
-def exchange_code_for_tokens(code):
-    """
-    Exchange an authorization code for access and refresh tokens.
+        return self._request('PATCH', f'/zones/{zone_id}/settings/security_level', {'value': level})
 
-    Args:
-        code: The authorization code received from Cloudflare OAuth callback
+    def get_bot_fight_mode(self, zone_id):
+        """
+        Get Bot Fight Mode status for a zone.
 
-    Returns:
-        dict: Token response containing 'access_token', 'refresh_token',
-              'expires_in', and 'token_type'
+        Args:
+            zone_id: The zone identifier
 
-    Raises:
-        CloudflareAPIError: If the token exchange fails
-        ValueError: If required environment variables are not set
-    """
-    client_id = os.environ.get('CLOUDFLARE_CLIENT_ID')
-    client_secret = os.environ.get('CLOUDFLARE_CLIENT_SECRET')
-    redirect_uri = os.environ.get('CLOUDFLARE_REDIRECT_URI')
+        Returns:
+            str: 'on' or 'off'
 
-    if not client_id:
-        raise ValueError("CLOUDFLARE_CLIENT_ID environment variable is not set")
-    if not client_secret:
-        raise ValueError("CLOUDFLARE_CLIENT_SECRET environment variable is not set")
-    if not redirect_uri:
-        raise ValueError("CLOUDFLARE_REDIRECT_URI environment variable is not set")
+        Raises:
+            CloudflareAPIError: If the request fails
+        """
+        result = self._request('GET', f'/zones/{zone_id}/settings/bot_fight_mode')
+        return result.get('value')
 
-    data = {
-        'grant_type': 'authorization_code',
-        'code': code,
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'redirect_uri': redirect_uri
-    }
+    def set_bot_fight_mode(self, zone_id, enabled):
+        """
+        Enable or disable Bot Fight Mode for a zone.
 
-    try:
-        response = requests.post(
-            CLOUDFLARE_OAUTH_TOKEN_URL,
-            data=data,
-            headers={'Content-Type': 'application/x-www-form-urlencoded'},
-            timeout=30
-        )
-    except requests.exceptions.Timeout:
-        raise CloudflareAPIError("Token exchange request timed out")
-    except requests.exceptions.RequestException as e:
-        raise CloudflareAPIError(f"Token exchange request failed: {str(e)}")
+        Args:
+            zone_id: The zone identifier
+            enabled: True to enable, False to disable
 
-    try:
-        response_data = response.json()
-    except ValueError:
-        raise CloudflareAPIError(
-            "Invalid JSON response from token endpoint",
-            status_code=response.status_code
-        )
+        Returns:
+            dict: Updated setting
 
-    # Check for OAuth error response
-    if 'error' in response_data:
-        error_description = response_data.get('error_description', response_data['error'])
-        raise CloudflareAPIError(
-            f"OAuth error: {error_description}",
-            status_code=response.status_code
-        )
-
-    # Ensure we have the required tokens
-    if 'access_token' not in response_data:
-        raise CloudflareAPIError(
-            "Token response missing access_token",
-            status_code=response.status_code
-        )
-
-    return response_data
-
-
-def refresh_access_token(refresh_token):
-    """
-    Refresh an expired access token using a refresh token.
-
-    Args:
-        refresh_token: The refresh token to use
-
-    Returns:
-        dict: Token response containing new 'access_token', 'refresh_token',
-              'expires_in', and 'token_type'
-
-    Raises:
-        CloudflareAPIError: If the token refresh fails
-        ValueError: If required environment variables are not set
-    """
-    client_id = os.environ.get('CLOUDFLARE_CLIENT_ID')
-    client_secret = os.environ.get('CLOUDFLARE_CLIENT_SECRET')
-
-    if not client_id:
-        raise ValueError("CLOUDFLARE_CLIENT_ID environment variable is not set")
-    if not client_secret:
-        raise ValueError("CLOUDFLARE_CLIENT_SECRET environment variable is not set")
-
-    data = {
-        'grant_type': 'refresh_token',
-        'refresh_token': refresh_token,
-        'client_id': client_id,
-        'client_secret': client_secret
-    }
-
-    try:
-        response = requests.post(
-            CLOUDFLARE_OAUTH_TOKEN_URL,
-            data=data,
-            headers={'Content-Type': 'application/x-www-form-urlencoded'},
-            timeout=30
-        )
-    except requests.exceptions.Timeout:
-        raise CloudflareAPIError("Token refresh request timed out")
-    except requests.exceptions.RequestException as e:
-        raise CloudflareAPIError(f"Token refresh request failed: {str(e)}")
-
-    try:
-        response_data = response.json()
-    except ValueError:
-        raise CloudflareAPIError(
-            "Invalid JSON response from token endpoint",
-            status_code=response.status_code
-        )
-
-    # Check for OAuth error response
-    if 'error' in response_data:
-        error_description = response_data.get('error_description', response_data['error'])
-        raise CloudflareAPIError(
-            f"OAuth error: {error_description}",
-            status_code=response.status_code
-        )
-
-    # Ensure we have the required tokens
-    if 'access_token' not in response_data:
-        raise CloudflareAPIError(
-            "Token response missing access_token",
-            status_code=response.status_code
-        )
-
-    return response_data
+        Raises:
+            CloudflareAPIError: If the request fails
+        """
+        value = 'on' if enabled else 'off'
+        return self._request('PATCH', f'/zones/{zone_id}/settings/bot_fight_mode', {'value': value})
