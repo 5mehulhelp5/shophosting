@@ -26,6 +26,9 @@ protobuf>=4.25.8  # Transitive dep, pinned for CVE-2025-4565
 redis==5.0.1
 rq==1.16.0
 
+# Payments
+stripe==7.0.0
+
 # Environment
 python-dotenv==1.0.0
 
