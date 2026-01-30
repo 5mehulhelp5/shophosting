@@ -221,6 +221,9 @@ def get_rate_limit_key():
 # Configure Redis storage for rate limiting (shared across workers)
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379/1')
 
+# Disable rate limiting in test mode
+is_testing = os.getenv('FLASK_ENV') == 'testing'
+
 limiter = Limiter(
     key_func=get_rate_limit_key,
     app=app,
@@ -228,6 +231,7 @@ limiter = Limiter(
     storage_options={"socket_connect_timeout": 5},
     default_limits=["200 per day", "50 per hour"],  # Global defaults
     strategy="fixed-window",
+    enabled=not is_testing,  # Disable in test mode
 )
 
 
