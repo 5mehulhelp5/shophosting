@@ -42,77 +42,20 @@
         <div class="stat-value success">{{ stats.active }}</div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">Virtual Users</div>
-        <div class="stat-value info">{{ stats.virtual }}</div>
+        <div class="stat-label">Inactive</div>
+        <div class="stat-value">{{ stats.inactive }}</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">System Users</div>
-        <div class="stat-value">{{ stats.system }}</div>
+        <div class="stat-value">{{ stats.system_users }}</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">Aliases</div>
         <div class="stat-value">{{ stats.aliases }}</div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">Storage Used</div>
-        <div class="stat-value">{{ stats.storage_used_gb|round(2) }} GB</div>
-        {% if stats.storage_total_gb %}
-        <div class="progress mt-4">
-            <div class="progress-bar" style="width: {{ (stats.storage_used_gb / stats.storage_total_gb * 100)|round }}%"></div>
-        </div>
-        {% endif %}
-    </div>
-</div>
-
-<!-- Recent Mailboxes -->
-<div class="card">
-    <div class="card-header">
-        <h3 class="card-title">Recent Mailboxes</h3>
-        <a href="{{ url_for('admin.mail.mailboxes') }}" class="btn btn-secondary btn-sm">View All</a>
-    </div>
-    <div class="table-container">
-        <table>
-            <thead>
-                <tr>
-                    <th>Email</th>
-                    <th>Type</th>
-                    <th>Quota</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for mailbox in recent_mailboxes %}
-                <tr>
-                    <td>
-                        <a href="{{ url_for('admin.mail.edit_mailbox', mailbox_id=mailbox.id) }}" style="color: var(--text-primary); text-decoration: none;">
-                            {{ mailbox.email }}
-                        </a>
-                    </td>
-                    <td>
-                        {% if mailbox.is_virtual %}
-                            <span class="badge badge-info">Virtual</span>
-                        {% else %}
-                            <span class="badge badge-suspended">System</span>
-                        {% endif %}
-                    </td>
-                    <td class="mono">{{ mailbox.quota_mb }} MB</td>
-                    <td>
-                        {% if mailbox.is_active %}
-                            <span class="badge badge-active">Active</span>
-                        {% else %}
-                            <span class="badge badge-suspended">Disabled</span>
-                        {% endif %}
-                    </td>
-                    <td class="text-muted">{{ mailbox.created_at.strftime('%Y-%m-%d') if mailbox.created_at else '-' }}</td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="5" class="text-muted text-center">No mailboxes yet</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="stat-label">Autoresponders</div>
+        <div class="stat-value">{{ stats.autoresponders }}</div>
     </div>
 </div>
 {% endblock %}
