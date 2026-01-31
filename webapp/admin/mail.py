@@ -373,8 +373,6 @@ class Alias:
             cursor.close()
             raise ValueError(f'Destination mailbox not found: {destination_mailbox_id}')
 
-        destination = mailbox['email']
-
         # Check alias doesn't already exist
         cursor.execute('SELECT id FROM mail_aliases WHERE alias = %s', (alias,))
         if cursor.fetchone():
@@ -382,9 +380,9 @@ class Alias:
             raise ValueError(f'Alias already exists: {alias}')
 
         cursor.execute('''
-            INSERT INTO mail_aliases (alias, destination, destination_mailbox_id, is_active)
-            VALUES (%s, %s, %s, 1)
-        ''', (alias, destination, destination_mailbox_id))
+            INSERT INTO mail_aliases (alias, destination_mailbox_id, is_active)
+            VALUES (%s, %s, 1)
+        ''', (alias, destination_mailbox_id))
 
         alias_id = cursor.lastrowid
         db.commit()
