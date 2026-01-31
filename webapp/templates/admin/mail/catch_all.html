@@ -17,19 +17,20 @@
         <div class="card-body">
             <p class="text-muted mb-4">
                 A catch-all mailbox receives all emails sent to non-existent addresses at your domain.
-                For example, if someone sends an email to <code style="color: var(--accent-cyan);">random@{{ domain }}</code>
+                For example, if someone sends an email to <code style="color: var(--accent-cyan);">random@{{ mail_domain }}</code>
                 and that address doesn't exist, the catch-all mailbox will receive it.
             </p>
 
             <form method="POST">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="set">
 
                 <div class="form-group">
-                    <label for="catch_all_mailbox">Catch-All Mailbox</label>
-                    <select id="catch_all_mailbox" name="catch_all_mailbox" class="form-control">
+                    <label for="destination_id">Catch-All Mailbox</label>
+                    <select id="destination_id" name="destination_id" class="form-control">
                         <option value="">Disabled (bounce unknown addresses)</option>
                         {% for mailbox in mailboxes %}
-                        <option value="{{ mailbox.id }}" {% if mailbox.is_catch_all %}selected{% endif %}>{{ mailbox.email }}</option>
+                        <option value="{{ mailbox.id }}" {% if catch_all and catch_all.destination_mailbox_id == mailbox.id %}selected{% endif %}>{{ mailbox.email }}</option>
                         {% endfor %}
                     </select>
                     <p class="text-muted" style="font-size: 0.85rem; margin-top: 6px;">
@@ -37,7 +38,7 @@
                     </p>
                 </div>
 
-                {% if current_catch_all %}
+                {% if catch_all %}
                 <div class="card mb-4" style="background: var(--info-muted); border-color: var(--border-accent);">
                     <div class="card-body">
                         <div style="display: flex; align-items: center; gap: 12px;">
@@ -45,8 +46,10 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
                             </svg>
                             <div>
-                                <strong style="color: var(--accent-blue);">Current Catch-All:</strong>
-                                <span class="mono" style="margin-left: 8px;">{{ current_catch_all.email }}</span>
+                                <strong style="color: var(--accent-blue);">Catch-All Active</strong>
+                                <p class="text-muted mb-0" style="font-size: 0.85rem; margin-top: 4px;">
+                                    All emails to unknown addresses at @{{ mail_domain }} are being forwarded.
+                                </p>
                             </div>
                         </div>
                     </div>
