@@ -54,6 +54,29 @@ def admin_required(f):
     return decorated_function
 
 
+def super_admin_required(f):
+    """Require super admin role for access"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if session.get('admin_user_role') != 'super_admin':
+            flash('This action requires super admin privileges.', 'error')
+            return redirect(url_for('admin.dashboard'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def admin_or_super_required(f):
+    """Require admin or super_admin role (excludes support and finance_admin)"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        role = session.get('admin_user_role')
+        if role not in ['admin', 'super_admin']:
+            flash('This action requires admin privileges.', 'error')
+            return redirect(url_for('admin.dashboard'))
+        return f(*args, **kwargs)
+    return decorated
+
+
 def get_current_admin():
     """Get current logged in admin user"""
     admin_id = session.get('admin_user_id')
@@ -575,8 +598,9 @@ def system_backups():
 
 @admin_bp.route('/system/backup/create', methods=['POST'])
 @admin_required
+@super_admin_required
 def system_backup_create():
-    """Create a new system backup"""
+    """Create a new system backup (super_admin only)"""
     admin = get_current_admin()
 
     try:
@@ -594,8 +618,9 @@ def system_backup_create():
 
 @admin_bp.route('/system/backup/restore/<snapshot_id>', methods=['POST'])
 @admin_required
+@super_admin_required
 def system_backup_restore(snapshot_id):
-    """Restore from a system backup snapshot"""
+    """Restore from a system backup snapshot (super_admin only)"""
     admin = get_current_admin()
 
     # Get restore target from form
@@ -671,8 +696,9 @@ def server_detail(server_id):
 
 @admin_bp.route('/servers/create', methods=['GET', 'POST'])
 @admin_required
+@super_admin_required
 def server_create():
-    """Create a new server"""
+    """Create a new server (super_admin only)"""
     admin = get_current_admin()
 
     if request.method == 'POST':
@@ -714,8 +740,9 @@ def server_create():
 
 @admin_bp.route('/servers/<int:server_id>/edit', methods=['GET', 'POST'])
 @admin_required
+@super_admin_required
 def server_edit(server_id):
-    """Edit a server"""
+    """Edit a server (super_admin only)"""
     admin = get_current_admin()
     server = Server.get_by_id(server_id)
 
@@ -748,8 +775,9 @@ def server_edit(server_id):
 
 @admin_bp.route('/servers/<int:server_id>/maintenance', methods=['POST'])
 @admin_required
+@super_admin_required
 def server_toggle_maintenance(server_id):
-    """Toggle server maintenance mode"""
+    """Toggle server maintenance mode (super_admin only)"""
     admin = get_current_admin()
     server = Server.get_by_id(server_id)
 
@@ -774,8 +802,9 @@ def server_toggle_maintenance(server_id):
 
 @admin_bp.route('/servers/<int:server_id>/delete', methods=['POST'])
 @admin_required
+@super_admin_required
 def server_delete(server_id):
-    """Delete a server (only if no customers)"""
+    """Delete a server (super_admin only, only if no customers)"""
     admin = get_current_admin()
     server = Server.get_by_id(server_id)
 
@@ -872,8 +901,9 @@ def staging_detail(staging_id):
 
 @admin_bp.route('/staging/<int:staging_id>/delete', methods=['POST'])
 @admin_required
+@admin_or_super_required
 def staging_delete(staging_id):
-    """Delete a staging environment (admin)"""
+    """Delete a staging environment (admin/super_admin only)"""
     admin = get_current_admin()
 
     staging = StagingEnvironment.get_by_id(staging_id)
@@ -1877,8 +1907,9 @@ def get_subscription_breakdown():
 
 @admin_bp.route('/restart/<service>', methods=['POST'])
 @admin_required
+@super_admin_required
 def restart_service(service):
-    """Restart a system service"""
+    """Restart a system service (super_admin only)"""
     admin = get_current_admin()
 
     allowed_services = ['shophosting-webapp', 'provisioning-worker', 'nginx', 'redis', 'mysql']
@@ -1905,8 +1936,9 @@ def restart_service(service):
 
 @admin_bp.route('/backup/run', methods=['POST'])
 @admin_required
+@super_admin_required
 def run_backup():
-    """Run backup manually"""
+    """Run backup manually (super_admin only)"""
     admin = get_current_admin()
 
     try:
@@ -1926,8 +1958,9 @@ def run_backup():
 
 @admin_bp.route('/jobs/clear-failed', methods=['POST'])
 @admin_required
+@super_admin_required
 def clear_failed_jobs():
-    """Clear all failed jobs from the queue"""
+    """Clear all failed jobs from the queue (super_admin only)"""
     admin = get_current_admin()
 
     try:
@@ -2013,8 +2046,9 @@ def manage_customers():
 
 @admin_bp.route('/manage-customers/create', methods=['GET', 'POST'])
 @admin_required
+@admin_or_super_required
 def create_customer():
-    """Create a new customer and queue provisioning"""
+    """Create a new customer and queue provisioning (admin/super_admin only)"""
     admin = get_current_admin()
 
     if request.method == 'POST':
@@ -2128,8 +2162,9 @@ def create_customer():
 
 @admin_bp.route('/manage-customers/<int:customer_id>/edit', methods=['GET', 'POST'])
 @admin_required
+@admin_or_super_required
 def edit_customer(customer_id):
-    """Edit a customer"""
+    """Edit a customer (admin/super_admin only)"""
     admin = get_current_admin()
     customer = Customer.get_by_id(customer_id)
 
@@ -2192,8 +2227,9 @@ def edit_customer(customer_id):
 
 @admin_bp.route('/manage-customers/<int:customer_id>/delete', methods=['POST'])
 @admin_required
+@super_admin_required
 def delete_customer(customer_id):
-    """Delete a customer and their containers/configs"""
+    """Delete a customer and their containers/configs (super_admin only)"""
     admin = get_current_admin()
     customer = Customer.get_by_id(customer_id)
 
@@ -2321,17 +2357,6 @@ def delete_customer(customer_id):
             flash(f'Error deleting customer: {str(e)}', 'error')
 
     return redirect(url_for('admin.manage_customers'))
-
-
-def super_admin_required(f):
-    """Require super admin role for access"""
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if session.get('admin_user_role') != 'super_admin':
-            flash('This action requires super admin privileges.', 'error')
-            return redirect(url_for('admin.dashboard'))
-        return f(*args, **kwargs)
-    return decorated
 
 
 class AdminUserForm(FlaskForm):
@@ -3533,8 +3558,9 @@ def status_management():
 
 @admin_bp.route('/status/incident/create', methods=['GET', 'POST'])
 @admin_required
+@admin_or_super_required
 def create_incident():
-    """Create a new incident"""
+    """Create a new incident (admin/super_admin only)"""
     if request.method == 'POST':
         incident = StatusIncident(
             server_id=request.form.get('server_id') or None,
@@ -3576,8 +3602,9 @@ def update_incident(incident_id):
 
 @admin_bp.route('/status/maintenance/create', methods=['GET', 'POST'])
 @admin_required
+@admin_or_super_required
 def create_maintenance():
-    """Create scheduled maintenance"""
+    """Create scheduled maintenance (admin/super_admin only)"""
     if request.method == 'POST':
         maintenance = StatusMaintenance(
             server_id=request.form.get('server_id') or None,
@@ -3596,8 +3623,9 @@ def create_maintenance():
 
 @admin_bp.route('/status/override', methods=['POST'])
 @admin_required
+@admin_or_super_required
 def set_status_override():
-    """Set a manual status override"""
+    """Set a manual status override (admin/super_admin only)"""
     service_name = request.form['service_name']
     display_status = request.form['display_status']
     message = request.form.get('message')

@@ -8,7 +8,7 @@ from functools import wraps
 
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 
-from .routes import admin_required, get_current_admin
+from .routes import admin_required, admin_or_super_required, get_current_admin
 from .models import log_admin_action
 from .mail import Mailbox, Alias, Autoresponder, get_maildir_size, MAIL_DOMAIN
 
@@ -98,6 +98,7 @@ def mailboxes():
 
 @mail_bp.route('/mailboxes/create', methods=['GET', 'POST'])
 @admin_required
+@admin_or_super_required
 def create_mailbox():
     """Create a new mailbox"""
     admin = get_current_admin()
@@ -148,6 +149,7 @@ def create_mailbox():
 
 @mail_bp.route('/mailboxes/<int:mailbox_id>/edit', methods=['GET', 'POST'])
 @admin_required
+@admin_or_super_required
 def edit_mailbox(mailbox_id):
     """Edit mailbox settings including password reset and autoresponder"""
     admin = get_current_admin()
@@ -240,6 +242,7 @@ def edit_mailbox(mailbox_id):
 
 @mail_bp.route('/mailboxes/<int:mailbox_id>/delete', methods=['POST'])
 @admin_required
+@admin_or_super_required
 def delete_mailbox(mailbox_id):
     """Delete a mailbox and its maildir"""
     admin = get_current_admin()
@@ -292,6 +295,7 @@ def aliases():
 
 @mail_bp.route('/aliases/create', methods=['GET', 'POST'])
 @admin_required
+@admin_or_super_required
 def create_alias():
     """Create a new alias"""
     admin = get_current_admin()
@@ -353,6 +357,7 @@ def create_alias():
 
 @mail_bp.route('/aliases/<int:alias_id>/delete', methods=['POST'])
 @admin_required
+@admin_or_super_required
 def delete_alias(alias_id):
     """Delete an alias"""
     admin = get_current_admin()
@@ -390,6 +395,7 @@ def delete_alias(alias_id):
 
 @mail_bp.route('/catch-all', methods=['GET', 'POST'])
 @admin_required
+@admin_or_super_required
 def catch_all():
     """Configure catch-all alias for domain"""
     admin = get_current_admin()
