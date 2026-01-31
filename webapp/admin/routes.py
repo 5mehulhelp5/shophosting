@@ -21,6 +21,7 @@ from wtforms.validators import DataRequired, Email, Length, EqualTo
 
 from . import admin_bp
 from .models import AdminUser, log_admin_action
+from .billing_service import BillingService, CustomerCredit, BillingServiceError
 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -240,6 +241,15 @@ def customer_detail(customer_id):
         monitoring_status = CustomerMonitoringStatus.get_or_create(customer_id)
         monitoring_alerts = MonitoringAlert.get_by_customer(customer_id, limit=5)
 
+    # Fetch billing summary for billing tab
+    billing_summary = None
+    try:
+        billing_summary = BillingService.get_customer_billing_summary(customer_id)
+        # Add credit history to billing summary
+        billing_summary['credit_history'] = CustomerCredit.get_by_customer(customer_id, limit=10)
+    except Exception as e:
+        logger.warning(f"Failed to load billing summary for customer {customer_id}: {e}")
+
     return render_template('admin/customer_detail.html',
                            admin=admin,
                            customer=customer,
@@ -250,7 +260,9 @@ def customer_detail(customer_id):
                            provisioning_logs=provisioning_logs,
                            in_progress_job=in_progress_job,
                            monitoring_status=monitoring_status,
-                           monitoring_alerts=monitoring_alerts)
+                           monitoring_alerts=monitoring_alerts,
+                           billing_summary=billing_summary,
+                           admin_role=session.get('admin_user_role'))
 
 
 @admin_bp.route('/customers/<int:customer_id>/resources')
@@ -2327,7 +2339,12 @@ class AdminUserForm(FlaskForm):
     full_name = StringField('Full Name', validators=[DataRequired(), Length(max=255)])
     email = StringField('Email', validators=[DataRequired(), Email(), Length(max=255)])
     password = PasswordField('Password', validators=[Length(min=8)])
-    role = SelectField('Role', choices=[('admin', 'Admin'), ('support', 'Support'), ('super_admin', 'Super Admin')], default='admin')
+    role = SelectField('Role', choices=[
+        ('admin', 'Admin'),
+        ('support', 'Support'),
+        ('finance_admin', 'Finance Admin'),
+        ('super_admin', 'Super Admin')
+    ], default='admin')
     is_active = BooleanField('Active', default=True)
     submit = SubmitField('Save Admin User')
 
@@ -3603,3 +3620,140 @@ def clear_status_override(service_name):
     StatusOverride.clear_override(service_name)
     flash(f'Status override cleared for {service_name}', 'success')
     return redirect(url_for('admin.status_management'))
+
+
+# =============================================================================
+# Billing Routes (Phase 1)
+# =============================================================================
+
+from .permissions import (
+    require_billing_read, require_billing_write, require_billing_refund,
+    can_process_refund, require_revenue_access, require_billing_admin
+)
+
+
+@admin_bp.route('/customers/<int:customer_id>/billing/refund', methods=['POST'])
+@admin_required
+@require_billing_refund()
+def process_refund(customer_id):
+    """Process a refund for a customer invoice"""
+    admin = get_current_admin()
+
+    invoice_id = request.form.get('invoice_id')
+    amount_str = request.form.get('amount', '0')
+    reason = request.form.get('reason', '').strip()
+
+    if not invoice_id:
+        flash('Please select an invoice.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    if not reason:
+        flash('Refund reason is required.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    try:
+        amount_cents = int(float(amount_str) * 100)
+    except ValueError:
+        flash('Invalid refund amount.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    # Check role-based refund limit
+    if not can_process_refund(amount_cents):
+        limit = session.get('admin_user_role')
+        flash(f'Refund amount exceeds your limit. Please contact a supervisor.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    try:
+        result = BillingService.process_refund(
+            admin_id=admin.id,
+            invoice_id=int(invoice_id),
+            amount_cents=amount_cents,
+            reason=reason,
+            ip_address=request.remote_addr
+        )
+        flash(f'Refund of ${amount_cents/100:.2f} processed successfully.', 'success')
+    except BillingServiceError as e:
+        flash(f'Refund failed: {str(e)}', 'error')
+    except Exception as e:
+        logger.error(f"Refund error: {e}")
+        flash('An error occurred processing the refund.', 'error')
+
+    return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+
+@admin_bp.route('/customers/<int:customer_id>/billing/credit', methods=['POST'])
+@admin_required
+@require_billing_write
+def apply_credit(customer_id):
+    """Apply a credit to a customer account"""
+    admin = get_current_admin()
+
+    amount_str = request.form.get('amount', '0')
+    reason = request.form.get('reason', '').strip()
+
+    if not reason:
+        flash('Credit reason is required.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    try:
+        amount_cents = int(float(amount_str) * 100)
+    except ValueError:
+        flash('Invalid credit amount.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    if amount_cents <= 0:
+        flash('Credit amount must be positive.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    try:
+        result = BillingService.apply_credit(
+            admin_id=admin.id,
+            customer_id=customer_id,
+            amount_cents=amount_cents,
+            reason=reason,
+            ip_address=request.remote_addr
+        )
+        flash(f'Credit of ${amount_cents/100:.2f} applied successfully.', 'success')
+    except BillingServiceError as e:
+        flash(f'Failed to apply credit: {str(e)}', 'error')
+    except Exception as e:
+        logger.error(f"Credit error: {e}")
+        flash('An error occurred applying the credit.', 'error')
+
+    return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+
+@admin_bp.route('/customers/<int:customer_id>/billing/retry-payment', methods=['POST'])
+@admin_required
+def retry_payment(customer_id):
+    """Retry a failed payment"""
+    admin = get_current_admin()
+    role = session.get('admin_user_role')
+
+    # Check permission - support, admin, and super_admin can retry payments
+    if role not in ['support', 'admin', 'super_admin']:
+        flash('You do not have permission to retry payments.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    invoice_id = request.form.get('invoice_id')
+    if not invoice_id:
+        flash('Please select an invoice.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    try:
+        result = BillingService.retry_payment(
+            admin_id=admin.id,
+            invoice_id=int(invoice_id),
+            ip_address=request.remote_addr
+        )
+        if result.get('paid'):
+            flash('Payment retry successful! Invoice is now paid.', 'success')
+        else:
+            flash('Payment retry initiated. Check status for updates.', 'info')
+    except BillingServiceError as e:
+        flash(f'Payment retry failed: {str(e)}', 'error')
+    except Exception as e:
+        logger.error(f"Payment retry error: {e}")
+        flash('An error occurred retrying the payment.', 'error')
+
+    return redirect(url_for('admin.customer_detail', customer_id=customer_id))

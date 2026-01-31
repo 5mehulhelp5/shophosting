@@ -1,0 +1,351 @@
+{# Customer Billing Tab - Partial for customer_detail.html #}
+{# Variables: billing_summary, admin_role #}
+
+{% if billing_summary %}
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+        <h3 class="card-title">Billing Overview</h3>
+        {% if admin_role in ['admin', 'super_admin'] %}
+        <div style="display: flex; gap: 8px;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="openRefundModal()">
+                Process Refund
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="openCreditModal()">
+                Apply Credit
+            </button>
+        </div>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px;">
+            <!-- Credit Balance -->
+            <div>
+                <div class="text-muted" style="font-size: 0.85rem; margin-bottom: 4px;">Credit Balance</div>
+                <div style="font-size: 1.25rem; font-weight: 600; color: {% if billing_summary.credit_balance_cents > 0 %}var(--success){% else %}var(--text-primary){% endif %};">
+                    ${{ "%.2f"|format(billing_summary.credit_balance_cents / 100) }}
+                </div>
+            </div>
+
+            <!-- Subscription Status -->
+            <div>
+                <div class="text-muted" style="font-size: 0.85rem; margin-bottom: 4px;">Subscription</div>
+                {% if billing_summary.subscription %}
+                <div>
+                    <span class="badge badge-{{ billing_summary.subscription.status }}">
+                        {{ billing_summary.subscription.status }}
+                    </span>
+                    {% if billing_summary.subscription.plan_name %}
+                    <span style="margin-left: 8px;">{{ billing_summary.subscription.plan_name }}</span>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="text-muted">No subscription</div>
+                {% endif %}
+            </div>
+
+            <!-- Total Invoices -->
+            <div>
+                <div class="text-muted" style="font-size: 0.85rem; margin-bottom: 4px;">Invoices</div>
+                <div style="font-size: 1.25rem; font-weight: 600;">
+                    {{ billing_summary.invoices | length }}
+                </div>
+            </div>
+
+            <!-- Payment Methods -->
+            <div>
+                <div class="text-muted" style="font-size: 0.85rem; margin-bottom: 4px;">Payment Methods</div>
+                {% if billing_summary.payment_methods %}
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    {% for pm in billing_summary.payment_methods[:1] %}
+                    <span style="text-transform: capitalize;">{{ pm.brand }}</span>
+                    <span class="mono">****{{ pm.last4 }}</span>
+                    {% endfor %}
+                    {% if billing_summary.payment_methods | length > 1 %}
+                    <span class="text-muted">(+{{ billing_summary.payment_methods | length - 1 }} more)</span>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="text-muted">None on file</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Methods Card -->
+{% if billing_summary.payment_methods %}
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+        <h3 class="card-title">Payment Methods</h3>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Card</th>
+                    <th>Last 4</th>
+                    <th>Expiry</th>
+                    <th>Default</th>
+                    {% if admin_role in ['admin', 'super_admin'] %}
+                    <th>Actions</th>
+                    {% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for pm in billing_summary.payment_methods %}
+                <tr>
+                    <td style="text-transform: capitalize;">{{ pm.brand }}</td>
+                    <td class="mono">{{ pm.last4 }}</td>
+                    <td>{{ "%02d"|format(pm.exp_month) }}/{{ pm.exp_year }}</td>
+                    <td>
+                        {% if pm.is_default %}
+                        <span class="badge badge-success">Default</span>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    {% if admin_role in ['admin', 'super_admin'] %}
+                    <td>
+                        <button type="button" class="btn btn-danger btn-sm"
+                                onclick="confirmRemovePaymentMethod('{{ pm.id }}')"
+                                style="font-size: 0.75rem; padding: 4px 8px;">
+                            Remove
+                        </button>
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Credit History -->
+{% if billing_summary.credit_history %}
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+        <h3 class="card-title">Credit History</h3>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Amount</th>
+                    <th>Reason</th>
+                    <th>Applied By</th>
+                    <th>Status</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for credit in billing_summary.credit_history %}
+                <tr>
+                    <td style="color: var(--success); font-weight: 500;">
+                        +${{ "%.2f"|format(credit.amount_cents / 100) }}
+                    </td>
+                    <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        {{ credit.reason or '-' }}
+                    </td>
+                    <td>{{ credit.admin_name or '-' }}</td>
+                    <td>
+                        {% if credit.applied_to_invoice_id %}
+                        <span class="badge badge-info">Used</span>
+                        {% elif credit.expires_at and credit.expires_at < now %}
+                        <span class="badge badge-error">Expired</span>
+                        {% else %}
+                        <span class="badge badge-success">Available</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ credit.created_at.strftime('%Y-%m-%d %H:%M') if credit.created_at else '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Billing Activity Log -->
+{% if billing_summary.billing_history %}
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+        <h3 class="card-title">Billing Activity</h3>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Action</th>
+                    <th>Amount</th>
+                    <th>Reason</th>
+                    <th>Admin</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in billing_summary.billing_history %}
+                <tr>
+                    <td>
+                        <span class="badge badge-{% if log.action_type == 'refund' %}warning{% elif log.action_type == 'credit' %}success{% else %}info{% endif %}">
+                            {{ log.action_type | replace('_', ' ') | title }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if log.amount_cents %}
+                        ${{ "%.2f"|format(log.amount_cents / 100) }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        {{ log.reason or '-' }}
+                    </td>
+                    <td>{{ log.admin_name or '-' }}</td>
+                    <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Modals for billing actions (Phase 2) -->
+{% if admin_role in ['admin', 'super_admin'] %}
+<style>
+.billing-modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+}
+.billing-modal-content {
+    background-color: var(--bg-secondary);
+    margin: 10% auto;
+    padding: 24px;
+    border-radius: var(--radius-lg);
+    width: 500px;
+    max-width: 90%;
+}
+.billing-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+.billing-modal-close {
+    cursor: pointer;
+    font-size: 24px;
+    color: var(--text-muted);
+}
+.billing-modal-close:hover {
+    color: var(--text-primary);
+}
+</style>
+
+<!-- Refund Modal -->
+<div id="refundModal" class="billing-modal">
+    <div class="billing-modal-content">
+        <div class="billing-modal-header">
+            <h3>Process Refund</h3>
+            <span class="billing-modal-close" onclick="closeRefundModal()">&times;</span>
+        </div>
+        <form method="POST" action="{{ url_for('admin.process_refund', customer_id=billing_summary.customer.id) if billing_summary.customer else '#' }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Invoice</label>
+                <select name="invoice_id" required style="width: 100%; padding: 10px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary);">
+                    <option value="">Select invoice...</option>
+                    {% for inv in billing_summary.invoices %}
+                    {% if inv.status == 'paid' %}
+                    <option value="{{ inv.id }}">{{ inv.stripe_invoice_id[:20] }}... - ${{ "%.2f"|format(inv.amount_paid / 100) }}</option>
+                    {% endif %}
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Amount ($)</label>
+                <input type="number" name="amount" step="0.01" min="0.01" required
+                       style="width: 100%; padding: 10px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary);">
+            </div>
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Reason (required)</label>
+                <textarea name="reason" required rows="3"
+                          style="width: 100%; padding: 10px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); resize: vertical;"></textarea>
+            </div>
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeRefundModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Process Refund</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Credit Modal -->
+<div id="creditModal" class="billing-modal">
+    <div class="billing-modal-content">
+        <div class="billing-modal-header">
+            <h3>Apply Credit</h3>
+            <span class="billing-modal-close" onclick="closeCreditModal()">&times;</span>
+        </div>
+        <form method="POST" action="{{ url_for('admin.apply_credit', customer_id=billing_summary.customer.id) if billing_summary.customer else '#' }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div style="margin-bottom: 16px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Amount ($)</label>
+                <input type="number" name="amount" step="0.01" min="0.01" required
+                       style="width: 100%; padding: 10px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary);">
+            </div>
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500;">Reason (required)</label>
+                <textarea name="reason" required rows="3"
+                          style="width: 100%; padding: 10px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--bg-primary); color: var(--text-primary); resize: vertical;"></textarea>
+            </div>
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeCreditModal()">Cancel</button>
+                <button type="submit" class="btn btn-success">Apply Credit</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script nonce="{{ csp_nonce() }}">
+function openRefundModal() {
+    document.getElementById('refundModal').style.display = 'block';
+}
+function closeRefundModal() {
+    document.getElementById('refundModal').style.display = 'none';
+}
+function openCreditModal() {
+    document.getElementById('creditModal').style.display = 'block';
+}
+function closeCreditModal() {
+    document.getElementById('creditModal').style.display = 'none';
+}
+function confirmRemovePaymentMethod(pmId) {
+    if (confirm('Are you sure you want to remove this payment method?')) {
+        // Phase 2: Implement payment method removal
+        alert('Payment method removal will be available in the next update.');
+    }
+}
+
+// Close modals when clicking outside
+window.onclick = function(event) {
+    if (event.target.classList.contains('billing-modal')) {
+        event.target.style.display = 'none';
+    }
+}
+</script>
+{% endif %}
+
+{% else %}
+<div class="card" style="margin-top: 24px;">
+    <div class="card-body">
+        <p class="text-muted">No billing information available for this customer.</p>
+    </div>
+</div>
+{% endif %}
