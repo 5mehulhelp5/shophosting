@@ -82,8 +82,6 @@ def get_db_connection(read_only=False):
     Returns:
         MySQL connection from the pool
     """
-    global db_pool, db_pool_read
-
     if db_pool is None:
         init_db_pool()
 
