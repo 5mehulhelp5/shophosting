@@ -1332,6 +1332,176 @@ def dashboard_billing():
                           active_page='billing')
 
 
+@app.route('/dashboard/billing/pause', methods=['POST'])
+@login_required
+def dashboard_pause_subscription():
+    """Pause customer's subscription"""
+    import stripe
+    from stripe_integration.config import get_stripe_config, is_stripe_configured
+
+    if not is_stripe_configured():
+        flash('Billing system is not configured.', 'error')
+        return redirect(url_for('dashboard_billing'))
+
+    customer = Customer.get_by_id(current_user.id)
+    subscription = Subscription.get_by_customer_id(customer.id)
+
+    if not subscription or not subscription.stripe_subscription_id:
+        flash('No active subscription found.', 'error')
+        return redirect(url_for('dashboard_billing'))
+
+    if subscription.status != 'active':
+        flash('Subscription is not active.', 'error')
+        return redirect(url_for('dashboard_billing'))
+
+    try:
+        config = get_stripe_config()
+        stripe.api_key = config['secret_key']
+
+        # Pause collection (stops billing, keeps subscription technically active)
+        stripe.Subscription.modify(
+            subscription.stripe_subscription_id,
+            pause_collection={'behavior': 'void'}
+        )
+
+        # Update local status
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE subscriptions SET status = 'paused', updated_at = NOW() WHERE id = %s",
+            (subscription.id,)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        flash('Your subscription has been paused. You can resume anytime.', 'success')
+        logger.info(f"Customer {customer.id} paused their subscription")
+
+    except stripe.error.StripeError as e:
+        flash(f'Unable to pause subscription: {str(e)}', 'error')
+        logger.error(f"Error pausing subscription for customer {customer.id}: {e}")
+
+    return redirect(url_for('dashboard_billing'))
+
+
+@app.route('/dashboard/billing/cancel', methods=['POST'])
+@login_required
+def dashboard_cancel_subscription():
+    """Cancel customer's subscription at period end"""
+    import stripe
+    from stripe_integration.config import get_stripe_config, is_stripe_configured
+
+    if not is_stripe_configured():
+        flash('Billing system is not configured.', 'error')
+        return redirect(url_for('dashboard_billing'))
+
+    customer = Customer.get_by_id(current_user.id)
+    subscription = Subscription.get_by_customer_id(customer.id)
+
+    if not subscription or not subscription.stripe_subscription_id:
+        flash('No active subscription found.', 'error')
+        return redirect(url_for('dashboard_billing'))
+
+    if subscription.status not in ('active', 'paused'):
+        flash('Subscription cannot be cancelled.', 'error')
+        return redirect(url_for('dashboard_billing'))
+
+    reason = request.form.get('reason', 'Customer requested cancellation')
+
+    try:
+        config = get_stripe_config()
+        stripe.api_key = config['secret_key']
+
+        # Cancel at period end (gives them remaining time)
+        stripe.Subscription.modify(
+            subscription.stripe_subscription_id,
+            cancel_at_period_end=True,
+            metadata={'cancel_reason': reason}
+        )
+
+        # Update local subscription
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE subscriptions
+            SET cancel_at = current_period_end,
+                updated_at = NOW()
+            WHERE id = %s
+        """, (subscription.id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        flash('Your subscription will be cancelled at the end of the current billing period.', 'success')
+        logger.info(f"Customer {customer.id} cancelled their subscription. Reason: {reason}")
+
+    except stripe.error.StripeError as e:
+        flash(f'Unable to cancel subscription: {str(e)}', 'error')
+        logger.error(f"Error cancelling subscription for customer {customer.id}: {e}")
+
+    return redirect(url_for('dashboard_billing'))
+
+
+@app.route('/dashboard/billing/resume', methods=['POST'])
+@login_required
+def dashboard_resume_subscription():
+    """Resume a paused or cancelled subscription"""
+    import stripe
+    from stripe_integration.config import get_stripe_config, is_stripe_configured
+
+    if not is_stripe_configured():
+        flash('Billing system is not configured.', 'error')
+        return redirect(url_for('dashboard_billing'))
+
+    customer = Customer.get_by_id(current_user.id)
+    subscription = Subscription.get_by_customer_id(customer.id)
+
+    if not subscription or not subscription.stripe_subscription_id:
+        flash('No subscription found.', 'error')
+        return redirect(url_for('dashboard_billing'))
+
+    try:
+        config = get_stripe_config()
+        stripe.api_key = config['secret_key']
+
+        # Check if paused - resume collection
+        if subscription.status == 'paused':
+            stripe.Subscription.modify(
+                subscription.stripe_subscription_id,
+                pause_collection=''  # Empty string removes pause
+            )
+
+        # If cancel_at is set, remove it
+        stripe.Subscription.modify(
+            subscription.stripe_subscription_id,
+            cancel_at_period_end=False
+        )
+
+        # Update local status
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE subscriptions
+            SET status = 'active',
+                cancel_at = NULL,
+                updated_at = NOW()
+            WHERE id = %s
+        """, (subscription.id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        flash('Your subscription has been resumed.', 'success')
+        logger.info(f"Customer {customer.id} resumed their subscription")
+
+    except stripe.error.StripeError as e:
+        flash(f'Unable to resume subscription: {str(e)}', 'error')
+        logger.error(f"Error resuming subscription for customer {customer.id}: {e}")
+
+    return redirect(url_for('dashboard_billing'))
+
+
 @app.route('/dashboard/settings')
 @login_required
 def dashboard_settings():

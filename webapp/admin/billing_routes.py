@@ -12,6 +12,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from models import get_db_connection, Customer, Subscription, Invoice, PricingPlan
 from .models import AdminUser, log_admin_action
 from .billing_service import BillingService, BillingAuditLog, CustomerCredit, BillingServiceError
+from services.container_service import ContainerService
 from .permissions import (
     require_billing_read, require_billing_write, require_billing_refund,
     require_revenue_access, require_billing_admin, can_process_refund,
@@ -570,7 +571,41 @@ def cancel_subscription(subscription_id):
         )
 
         if cancel_immediately:
-            flash('Subscription cancelled immediately.', 'success')
+            # Also suspend customer and stop containers immediately
+            subscription = Subscription.get_by_id(subscription_id)
+            if subscription:
+                customer_id = subscription.customer_id
+                customer = Customer.get_by_id(customer_id)
+
+                if customer and customer.status == 'active':
+                    # Stop containers (preserves data)
+                    container_success, container_msg = ContainerService.stop_containers(customer_id)
+
+                    # Update customer status to suspended
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    try:
+                        cursor.execute("""
+                            UPDATE customers
+                            SET status = 'suspended',
+                                suspension_reason = %s,
+                                suspended_at = NOW(),
+                                auto_suspended = FALSE
+                            WHERE id = %s
+                        """, (f'Subscription cancelled: {reason}', customer_id))
+                        conn.commit()
+                    finally:
+                        cursor.close()
+                        conn.close()
+
+                    if container_success:
+                        flash('Subscription cancelled and customer suspended. Containers stopped.', 'success')
+                    else:
+                        flash(f'Subscription cancelled and customer suspended. Container warning: {container_msg}', 'warning')
+                else:
+                    flash('Subscription cancelled immediately.', 'success')
+            else:
+                flash('Subscription cancelled immediately.', 'success')
         else:
             flash('Subscription will be cancelled at end of billing period.', 'success')
     except BillingServiceError as e:
