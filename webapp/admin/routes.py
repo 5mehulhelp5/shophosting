@@ -32,6 +32,7 @@ from models import MonitoringCheck, CustomerMonitoringStatus, MonitoringAlert
 from models import ResourceUsage, ResourceAlert
 from models import StagingEnvironment, StagingPortManager
 from status.models import StatusIncident, StatusIncidentUpdate, StatusMaintenance, StatusOverride
+from services.container_service import ContainerService
 
 logger = logging.getLogger(__name__)
 
@@ -315,8 +316,9 @@ def customer_resources(customer_id):
 
 @admin_bp.route('/customers/<int:customer_id>/suspend', methods=['POST'])
 @admin_required
+@admin_or_super_required
 def customer_suspend(customer_id):
-    """Suspend a customer"""
+    """Suspend a customer - stops containers but preserves data"""
     admin = get_current_admin()
     customer = Customer.get_by_id(customer_id)
 
@@ -328,22 +330,40 @@ def customer_suspend(customer_id):
         flash('Customer is already suspended.', 'warning')
         return redirect(url_for('admin.customer_detail', customer_id=customer_id))
 
+    # Get suspension reason from form
+    reason = request.form.get('reason', 'Admin action')
+
+    # Stop containers first (preserves data, just stops running)
+    container_success, container_msg = ContainerService.stop_containers(customer_id)
+    if not container_success:
+        logger.warning(f"Could not stop containers for customer {customer_id}: {container_msg}")
+        # Continue with suspension even if container stop fails
+
     # Update customer status
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute(
-            "UPDATE customers SET status = 'suspended' WHERE id = %s",
-            (customer_id,)
-        )
+        cursor.execute("""
+            UPDATE customers
+            SET status = 'suspended',
+                suspension_reason = %s,
+                suspended_at = NOW(),
+                auto_suspended = FALSE
+            WHERE id = %s
+        """, (reason, customer_id))
         conn.commit()
     finally:
         cursor.close()
         conn.close()
 
     log_admin_action(admin.id, 'customer_suspend', 'customer', customer_id,
-                     f'Suspended customer {customer.email}', request.remote_addr)
-    flash(f'Customer {customer.email} has been suspended.', 'success')
+                     f'Suspended customer {customer.email}: {reason}', request.remote_addr)
+
+    if container_success:
+        flash(f'Customer {customer.email} has been suspended. Containers stopped.', 'success')
+    else:
+        flash(f'Customer {customer.email} has been suspended. Warning: {container_msg}', 'warning')
+
     return redirect(url_for('admin.customer_detail', customer_id=customer_id))
 
 
@@ -460,8 +480,9 @@ def customer_retry_provisioning(customer_id):
 
 @admin_bp.route('/customers/<int:customer_id>/reactivate', methods=['POST'])
 @admin_required
+@admin_or_super_required
 def customer_reactivate(customer_id):
-    """Reactivate a suspended customer"""
+    """Reactivate a suspended customer - starts containers"""
     admin = get_current_admin()
     customer = Customer.get_by_id(customer_id)
 
@@ -473,14 +494,25 @@ def customer_reactivate(customer_id):
         flash('Customer is not suspended.', 'warning')
         return redirect(url_for('admin.customer_detail', customer_id=customer_id))
 
+    # Start containers
+    container_success, container_msg = ContainerService.start_containers(customer_id)
+    if not container_success:
+        logger.warning(f"Could not start containers for customer {customer_id}: {container_msg}")
+        # Continue with reactivation even if container start fails
+
     # Update customer status back to active
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute(
-            "UPDATE customers SET status = 'active' WHERE id = %s",
-            (customer_id,)
-        )
+        cursor.execute("""
+            UPDATE customers
+            SET status = 'active',
+                suspension_reason = NULL,
+                suspended_at = NULL,
+                auto_suspended = FALSE,
+                reactivated_at = NOW()
+            WHERE id = %s
+        """, (customer_id,))
         conn.commit()
     finally:
         cursor.close()
@@ -488,7 +520,12 @@ def customer_reactivate(customer_id):
 
     log_admin_action(admin.id, 'customer_reactivate', 'customer', customer_id,
                      f'Reactivated customer {customer.email}', request.remote_addr)
-    flash(f'Customer {customer.email} has been reactivated.', 'success')
+
+    if container_success:
+        flash(f'Customer {customer.email} has been reactivated. Containers started.', 'success')
+    else:
+        flash(f'Customer {customer.email} has been reactivated. Warning: {container_msg}', 'warning')
+
     return redirect(url_for('admin.customer_detail', customer_id=customer_id))
 
 
