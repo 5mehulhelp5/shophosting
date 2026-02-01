@@ -414,7 +414,7 @@ class TestSpeedBattleRoutes:
     @patch('redis.Redis')
     @patch('leads.routes.SpeedBattle')
     def test_start_battle_with_form_data(self, mock_battle_class, mock_redis, mock_queue, client):
-        """Test starting a battle with form data instead of JSON"""
+        """Test starting a battle with form data instead of JSON redirects to results"""
         mock_battle = Mock()
         mock_battle.id = 1
         mock_battle.battle_uid = 'abc12345'
@@ -429,7 +429,9 @@ class TestSpeedBattleRoutes:
                 'opponent_url': 'https://competitor.com'
             })
 
-        assert response.status_code == 200
+        # Form submissions redirect to the results page
+        assert response.status_code == 302
+        assert '/speed-battle/abc12345' in response.location
 
     @patch('rq.Queue')
     @patch('redis.Redis')
