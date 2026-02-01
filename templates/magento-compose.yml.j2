@@ -43,7 +43,11 @@ services:
       VARNISH_HOST: varnish
       VARNISH_PORT: 80
     volumes:
-      - ./volumes/files:/var/www/html
+      - ./volumes/media:/var/www/html/pub/media
+      - ./volumes/var:/var/www/html/var
+      - ./volumes/generated:/var/www/html/generated
+      - ./volumes/static:/var/www/html/pub/static
+      - ./volumes/app-etc:/var/www/html/app/etc
     depends_on:
       db:
         condition: service_healthy
