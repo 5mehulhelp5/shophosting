@@ -1,0 +1,667 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}Battle Detail - {{ battle.battle_uid }}{% endblock %}
+{% block page_title %}Battle Detail{% endblock %}
+
+{% block extra_css %}
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600&display=swap');
+
+    /* Animations */
+    @keyframes slideUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes scaleIn {
+        from { opacity: 0; transform: scale(0.95); }
+        to { opacity: 1; transform: scale(1); }
+    }
+
+    /* Page layout */
+    .battle-detail-page {
+        animation: slideUp 0.4s ease-out;
+    }
+
+    /* Back link */
+    .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-tertiary);
+        text-decoration: none;
+        font-size: 0.875rem;
+        margin-bottom: 24px;
+        transition: all 0.2s ease;
+    }
+
+    .back-link:hover {
+        color: var(--accent-cyan);
+        transform: translateX(-4px);
+    }
+
+    /* Header card */
+    .battle-header-card {
+        background: linear-gradient(145deg, rgba(24, 24, 28, 0.9) 0%, rgba(17, 17, 20, 0.95) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 24px;
+        padding: 32px;
+        margin-bottom: 24px;
+        position: relative;
+        overflow: hidden;
+        animation: scaleIn 0.4s ease-out;
+    }
+
+    .battle-header-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(90deg, transparent, rgba(0, 136, 255, 0.3), transparent);
+    }
+
+    .header-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 24px;
+    }
+
+    .battle-uid-large {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 1.5rem;
+        color: var(--accent-cyan);
+        background: rgba(0, 212, 255, 0.1);
+        padding: 8px 16px;
+        border-radius: 10px;
+        display: inline-block;
+    }
+
+    .status-badge-large {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        border-radius: 100px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .status-badge-large::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+
+    .status-badge-large.pending { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+    .status-badge-large.pending::before { background: #fbbf24; }
+    .status-badge-large.scanning { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+    .status-badge-large.scanning::before { background: #60a5fa; animation: pulse 2s infinite; }
+    .status-badge-large.completed { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+    .status-badge-large.completed::before { background: #4ade80; }
+    .status-badge-large.failed { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+    .status-badge-large.failed::before { background: #f87171; }
+
+    /* Battle arena */
+    .battle-arena {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 24px;
+        align-items: center;
+    }
+
+    .combatant {
+        text-align: center;
+        padding: 24px;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .combatant.winner {
+        border-color: rgba(34, 197, 94, 0.3);
+        background: rgba(34, 197, 94, 0.05);
+    }
+
+    .combatant.loser {
+        border-color: rgba(239, 68, 68, 0.2);
+        background: rgba(239, 68, 68, 0.02);
+    }
+
+    .combatant-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--text-muted);
+        margin-bottom: 12px;
+    }
+
+    .combatant-url {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        margin-bottom: 16px;
+        word-break: break-all;
+    }
+
+    .combatant-score {
+        font-family: 'Playfair Display', Georgia, serif;
+        font-size: 3.5rem;
+        font-weight: 600;
+        line-height: 1;
+        margin-bottom: 8px;
+    }
+
+    .combatant.winner .combatant-score { color: #4ade80; }
+    .combatant.loser .combatant-score { color: #f87171; }
+    .combatant.tie .combatant-score { color: #fbbf24; }
+
+    .tier-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 100px;
+        font-size: 0.8rem;
+        font-weight: 500;
+    }
+
+    .tier-badge.green { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+    .tier-badge.blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+    .tier-badge.yellow { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+    .tier-badge.red { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+
+    /* VS indicator */
+    .vs-indicator {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .vs-circle {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, rgba(0, 136, 255, 0.2) 0%, rgba(91, 91, 214, 0.2) 100%);
+        border: 2px solid rgba(0, 136, 255, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Playfair Display', Georgia, serif;
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .margin-display {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+
+    /* Info grid */
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 24px;
+        margin-top: 24px;
+    }
+
+    @media (max-width: 768px) {
+        .info-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .info-card {
+        background: linear-gradient(145deg, rgba(24, 24, 28, 0.8) 0%, rgba(17, 17, 20, 0.9) 100%);
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        border-radius: 16px;
+        padding: 24px;
+    }
+
+    .info-card h3 {
+        font-family: 'Playfair Display', Georgia, serif;
+        font-size: 1.1rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .info-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    .info-row:last-child {
+        border-bottom: none;
+    }
+
+    .info-label {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+
+    .info-value {
+        font-size: 0.85rem;
+        color: var(--text-primary);
+        font-weight: 500;
+    }
+
+    .info-value.mono {
+        font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Round breakdown */
+    .rounds-card {
+        grid-column: span 2;
+    }
+
+    @media (max-width: 768px) {
+        .rounds-card {
+            grid-column: span 1;
+        }
+    }
+
+    .round-row {
+        display: grid;
+        grid-template-columns: 1fr 80px 60px 80px 1fr;
+        align-items: center;
+        gap: 16px;
+        padding: 16px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .round-row:last-child {
+        border-bottom: none;
+    }
+
+    .round-name {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+    }
+
+    .round-weight {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-align: center;
+    }
+
+    .round-score {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-align: center;
+        padding: 4px 8px;
+        border-radius: 6px;
+    }
+
+    .round-score.winner { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+    .round-score.loser { background: rgba(239, 68, 68, 0.1); color: #f87171; }
+    .round-score.tie { background: rgba(245, 158, 11, 0.1); color: #fbbf24; }
+
+    .round-vs {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        text-align: center;
+        text-transform: uppercase;
+    }
+
+    .round-margin {
+        font-size: 0.8rem;
+        text-align: right;
+    }
+
+    .round-margin.positive { color: #4ade80; }
+    .round-margin.negative { color: #f87171; }
+    .round-margin.neutral { color: var(--text-muted); }
+
+    /* Share stats */
+    .share-stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+    }
+
+    .share-stat {
+        text-align: center;
+        padding: 16px;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 10px;
+    }
+
+    .share-stat .platform {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: capitalize;
+        margin-bottom: 4px;
+    }
+
+    .share-stat .count {
+        font-family: 'Playfair Display', Georgia, serif;
+        font-size: 1.5rem;
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    /* Spawned battles */
+    .spawned-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+    }
+
+    .spawned-table th {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+        font-weight: 600;
+        padding: 12px 8px;
+        text-align: left;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .spawned-table td {
+        padding: 12px 8px;
+        color: var(--text-secondary);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    .spawned-table .battle-uid-small {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.75rem;
+        color: var(--accent-cyan);
+        background: rgba(0, 212, 255, 0.1);
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+
+    .spawned-table .btn-view-small {
+        padding: 4px 10px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 6px;
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-decoration: none;
+        transition: all 0.2s ease;
+    }
+
+    .spawned-table .btn-view-small:hover {
+        background: rgba(0, 136, 255, 0.1);
+        border-color: rgba(0, 136, 255, 0.3);
+        color: #0088ff;
+    }
+
+    /* Referrer link */
+    .referrer-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--accent-cyan);
+        text-decoration: none;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.85rem;
+        background: rgba(0, 212, 255, 0.1);
+        padding: 4px 10px;
+        border-radius: 6px;
+        transition: all 0.2s ease;
+    }
+
+    .referrer-link:hover {
+        background: rgba(0, 212, 255, 0.2);
+    }
+
+    /* Error message */
+    .error-message {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.2);
+        border-radius: 10px;
+        padding: 16px;
+        color: #f87171;
+        font-size: 0.9rem;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="battle-detail-page">
+    <!-- Back link -->
+    <a href="{{ url_for('admin.leads_admin.battles') }}" class="back-link">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+        Back to Battles
+    </a>
+
+    <!-- Header Card -->
+    <div class="battle-header-card">
+        <div class="header-top">
+            <span class="battle-uid-large">{{ battle.battle_uid }}</span>
+            <span class="status-badge-large {{ battle.status }}">{{ battle.status }}</span>
+        </div>
+
+        <!-- Battle Arena -->
+        <div class="battle-arena">
+            <!-- Challenger -->
+            <div class="combatant {% if battle.winner == 'challenger' %}winner{% elif battle.winner == 'opponent' %}loser{% elif battle.winner == 'tie' %}tie{% endif %}">
+                <div class="combatant-label">Challenger</div>
+                <div class="combatant-url">{{ battle.challenger_url }}</div>
+                {% if battle.challenger_score is not none %}
+                <div class="combatant-score">{{ battle.challenger_score }}</div>
+                {% if challenger_tier %}
+                <span class="tier-badge {{ challenger_tier.color }}">{{ challenger_tier.label }}</span>
+                {% endif %}
+                {% else %}
+                <div class="combatant-score" style="color: var(--text-muted);">--</div>
+                {% endif %}
+            </div>
+
+            <!-- VS -->
+            <div class="vs-indicator">
+                <div class="vs-circle">VS</div>
+                {% if battle.margin is not none %}
+                <div class="margin-display">
+                    {% if battle.winner == 'tie' %}
+                    Tie
+                    {% else %}
+                    +{{ battle.margin }} pts
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Opponent -->
+            <div class="combatant {% if battle.winner == 'opponent' %}winner{% elif battle.winner == 'challenger' %}loser{% elif battle.winner == 'tie' %}tie{% endif %}">
+                <div class="combatant-label">Opponent</div>
+                <div class="combatant-url">{{ battle.opponent_url }}</div>
+                {% if battle.opponent_score is not none %}
+                <div class="combatant-score">{{ battle.opponent_score }}</div>
+                {% if opponent_tier %}
+                <span class="tier-badge {{ opponent_tier.color }}">{{ opponent_tier.label }}</span>
+                {% endif %}
+                {% else %}
+                <div class="combatant-score" style="color: var(--text-muted);">--</div>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if battle.error_message %}
+        <div class="error-message" style="margin-top: 24px;">
+            <strong>Error:</strong> {{ battle.error_message }}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Info Grid -->
+    <div class="info-grid">
+        <!-- Battle Info -->
+        <div class="info-card">
+            <h3>Battle Information</h3>
+            <div class="info-row">
+                <span class="info-label">Battle ID</span>
+                <span class="info-value mono">{{ battle.id }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Battle UID</span>
+                <span class="info-value mono">{{ battle.battle_uid }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">IP Address</span>
+                <span class="info-value mono">{{ battle.ip_address or '-' }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Created</span>
+                <span class="info-value">{{ battle.created_at.strftime('%Y-%m-%d %H:%M:%S') if battle.created_at else '-' }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Completed</span>
+                <span class="info-value">{{ battle.completed_at.strftime('%Y-%m-%d %H:%M:%S') if battle.completed_at else '-' }}</span>
+            </div>
+            {% if referrer_battle %}
+            <div class="info-row">
+                <span class="info-label">Referred From</span>
+                <span class="info-value">
+                    <a href="{{ url_for('admin.leads_admin.battle_detail', battle_id=referrer_battle.id) }}" class="referrer-link">
+                        {{ referrer_battle.battle_uid }}
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                    </a>
+                </span>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Lead Info -->
+        <div class="info-card">
+            <h3>Lead Information</h3>
+            <div class="info-row">
+                <span class="info-label">Email</span>
+                <span class="info-value">{{ battle.email or '-' }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Email Segment</span>
+                <span class="info-value">{{ battle.email_segment or '-' }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Winner</span>
+                <span class="info-value" style="text-transform: capitalize;">{{ battle.winner or '-' }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Margin</span>
+                <span class="info-value">{{ battle.margin if battle.margin is not none else '-' }} pts</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Challenger Scan ID</span>
+                <span class="info-value mono">{{ battle.challenger_scan_id or '-' }}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Opponent Scan ID</span>
+                <span class="info-value mono">{{ battle.opponent_scan_id or '-' }}</span>
+            </div>
+        </div>
+
+        <!-- Round Breakdown -->
+        {% if round_breakdown %}
+        <div class="info-card rounds-card">
+            <h3>Round Breakdown</h3>
+            {% for round in round_breakdown %}
+            <div class="round-row">
+                <div class="round-name">{{ round.name }}</div>
+                <div class="round-score {% if round.winner == 'challenger' %}winner{% elif round.winner == 'opponent' %}loser{% else %}tie{% endif %}">
+                    {{ round.challenger_score }}
+                </div>
+                <div class="round-vs">vs</div>
+                <div class="round-score {% if round.winner == 'opponent' %}winner{% elif round.winner == 'challenger' %}loser{% else %}tie{% endif %}">
+                    {{ round.opponent_score }}
+                </div>
+                <div class="round-margin {% if round.winner == 'challenger' %}positive{% elif round.winner == 'opponent' %}negative{% else %}neutral{% endif %}">
+                    {% if round.winner == 'challenger' %}
+                    +{{ round.margin }}
+                    {% elif round.winner == 'opponent' %}
+                    -{{ round.margin }}
+                    {% else %}
+                    tie
+                    {% endif %}
+                    <span style="color: var(--text-muted); font-size: 0.7rem;">({{ round.weight }}%)</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Share Stats -->
+        <div class="info-card">
+            <h3>Share Statistics</h3>
+            <div class="share-stats">
+                <div class="share-stat">
+                    <div class="platform">Twitter</div>
+                    <div class="count">{{ battle.share_clicks_twitter or 0 }}</div>
+                </div>
+                <div class="share-stat">
+                    <div class="platform">Facebook</div>
+                    <div class="count">{{ battle.share_clicks_facebook or 0 }}</div>
+                </div>
+                <div class="share-stat">
+                    <div class="platform">LinkedIn</div>
+                    <div class="count">{{ battle.share_clicks_linkedin or 0 }}</div>
+                </div>
+                <div class="share-stat">
+                    <div class="platform">Copy Link</div>
+                    <div class="count">{{ battle.share_clicks_copy or 0 }}</div>
+                </div>
+            </div>
+            <div class="info-row" style="margin-top: 16px;">
+                <span class="info-label">Total Shares</span>
+                <span class="info-value">{{ (battle.share_clicks_twitter or 0) + (battle.share_clicks_facebook or 0) + (battle.share_clicks_linkedin or 0) + (battle.share_clicks_copy or 0) }}</span>
+            </div>
+        </div>
+
+        <!-- Spawned Battles -->
+        <div class="info-card">
+            <h3>Spawned Battles ({{ spawned_battles|length }})</h3>
+            {% if spawned_battles %}
+            <table class="spawned-table">
+                <thead>
+                    <tr>
+                        <th>Battle</th>
+                        <th>Status</th>
+                        <th>Email</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sb in spawned_battles %}
+                    <tr>
+                        <td><span class="battle-uid-small">{{ sb.battle_uid }}</span></td>
+                        <td style="text-transform: capitalize;">{{ sb.status }}</td>
+                        <td>{{ sb.email or '-' }}</td>
+                        <td>
+                            <a href="{{ url_for('admin.leads_admin.battle_detail', battle_id=sb.id) }}" class="btn-view-small">View</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="color: var(--text-muted); font-size: 0.9rem; text-align: center; padding: 20px;">
+                No battles have been spawned from this one yet.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
