@@ -50,3 +50,8 @@ pytest-cov==4.1.0
 # File validation
 python-magic==0.4.27
 cryptography>=43.0.0
+
+# AI & Marketing Integrations
+anthropic>=0.40.0
+google-auth>=2.27.0
+google-auth-httplib2>=0.2.0
