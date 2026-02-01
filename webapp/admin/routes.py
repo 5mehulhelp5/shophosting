@@ -90,6 +90,18 @@ def acquisition_or_admin_required(f):
     return decorated
 
 
+def marketing_or_admin_required(f):
+    """Require marketing, admin, or super_admin role for Marketing Command Center access"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        role = session.get('admin_user_role')
+        if role not in ['marketing', 'admin', 'super_admin']:
+            flash('This action requires marketing or admin privileges.', 'error')
+            return redirect(url_for('admin.dashboard'))
+        return f(*args, **kwargs)
+    return decorated
+
+
 def get_current_admin():
     """Get current logged in admin user"""
     admin_id = session.get('admin_user_id')
