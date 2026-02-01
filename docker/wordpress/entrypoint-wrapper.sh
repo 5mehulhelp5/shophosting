@@ -39,46 +39,58 @@ chown -R www-data:www-data /var/www/html/wp-content
 
 # Seed base plugins from image if volumes are empty
 if [[ ! -d /var/www/html/wp-content/plugins/woocommerce ]]; then
-    echo "[shophosting.io] Seeding WooCommerce plugin..."
-    cp -r /usr/src/plugins/woocommerce /var/www/html/wp-content/plugins/
-    chown -R www-data:www-data /var/www/html/wp-content/plugins/woocommerce
+    if [[ -d /usr/src/plugins/woocommerce ]]; then
+        echo "[shophosting.io] Seeding WooCommerce plugin..."
+        cp -r /usr/src/plugins/woocommerce /var/www/html/wp-content/plugins/
+        chown -R www-data:www-data /var/www/html/wp-content/plugins/woocommerce
+    else
+        echo "[shophosting.io] WARNING: WooCommerce plugin not found in image" >&2
+    fi
 fi
 
 if [[ ! -d /var/www/html/wp-content/plugins/redis-cache ]]; then
-    echo "[shophosting.io] Seeding Redis Cache plugin..."
-    cp -r /usr/src/plugins/redis-cache /var/www/html/wp-content/plugins/
-    chown -R www-data:www-data /var/www/html/wp-content/plugins/redis-cache
+    if [[ -d /usr/src/plugins/redis-cache ]]; then
+        echo "[shophosting.io] Seeding Redis Cache plugin..."
+        cp -r /usr/src/plugins/redis-cache /var/www/html/wp-content/plugins/
+        chown -R www-data:www-data /var/www/html/wp-content/plugins/redis-cache
+    else
+        echo "[shophosting.io] WARNING: Redis Cache plugin not found in image" >&2
+    fi
 fi
 
 # Seed default theme if themes directory is empty
 if [[ -z "$(ls -A /var/www/html/wp-content/themes 2>/dev/null)" ]]; then
-    echo "[shophosting.io] Seeding default themes..."
-    cp -r /usr/src/wordpress/wp-content/themes/* /var/www/html/wp-content/themes/
-    chown -R www-data:www-data /var/www/html/wp-content/themes
+    if [[ -d /usr/src/wordpress/wp-content/themes ]]; then
+        echo "[shophosting.io] Seeding default themes..."
+        cp -r /usr/src/wordpress/wp-content/themes/* /var/www/html/wp-content/themes/
+        chown -R www-data:www-data /var/www/html/wp-content/themes
+    else
+        echo "[shophosting.io] WARNING: Default themes not found in image" >&2
+    fi
 fi
 
 # Generate wp-config.php if it doesn't exist
 if [[ ! -f /var/www/html/wp-config.php ]]; then
     echo "[shophosting.io] Generating wp-config.php..."
 
-    # Generate salts
-    SALTS=$(curl -s https://api.wordpress.org/secret-key/1.1/salt/ || cat <<'FALLBACK'
-define('AUTH_KEY',         'put your unique phrase here');
-define('SECURE_AUTH_KEY',  'put your unique phrase here');
-define('LOGGED_IN_KEY',    'put your unique phrase here');
-define('NONCE_KEY',        'put your unique phrase here');
-define('AUTH_SALT',        'put your unique phrase here');
-define('SECURE_AUTH_SALT', 'put your unique phrase here');
-define('LOGGED_IN_SALT',   'put your unique phrase here');
-define('NONCE_SALT',       'put your unique phrase here');
-FALLBACK
-)
+    # Escape single quotes in password for PHP string
+    DB_PASSWORD_ESCAPED="${WORDPRESS_DB_PASSWORD//\'/\\\'}"
+
+    # Generate salts with timeout and secure fallback
+    SALTS=$(curl -s --connect-timeout 5 --max-time 10 https://api.wordpress.org/secret-key/1.1/salt/) || {
+        echo "[shophosting.io] WARNING: Could not fetch salts from WordPress API, generating local salts..."
+        SALTS=""
+        for key in AUTH_KEY SECURE_AUTH_KEY LOGGED_IN_KEY NONCE_KEY AUTH_SALT SECURE_AUTH_SALT LOGGED_IN_SALT NONCE_SALT; do
+            SALT_VALUE=$(head -c 64 /dev/urandom | base64 | tr -d '\n' | head -c 64)
+            SALTS="${SALTS}define('${key}', '${SALT_VALUE}');"$'\n'
+        done
+    }
 
     cat > /var/www/html/wp-config.php <<WPCONFIG
 <?php
 define('DB_NAME', '${WORDPRESS_DB_NAME}');
 define('DB_USER', '${WORDPRESS_DB_USER}');
-define('DB_PASSWORD', '${WORDPRESS_DB_PASSWORD}');
+define('DB_PASSWORD', '${DB_PASSWORD_ESCAPED}');
 define('DB_HOST', '${WORDPRESS_DB_HOST}');
 define('DB_CHARSET', 'utf8mb4');
 define('DB_COLLATE', '');
