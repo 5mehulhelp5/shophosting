@@ -116,6 +116,9 @@ validate_required_config()
 
 app = Flask(__name__)
 
+# Allow URLs with or without trailing slashes to work the same
+app.url_map.strict_slashes = False
+
 # Secret key - must be set in environment
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 if not app.config['SECRET_KEY']:
@@ -326,24 +329,27 @@ def check_session_timeout():
                 return redirect(url_for('login'))
         session['last_activity'] = time.time()
 
-    # Check for admin session timeout
-    admin_id = session.get('admin_user_id')
-    if admin_id:
-        last_admin_activity = session.get('admin_last_activity')
-        if last_admin_activity:
-            idle_time = time.time() - last_admin_activity
-            if idle_time > SESSION_IDLE_TIMEOUT:
-                security_logger.info(
-                    f"ADMIN_SESSION_TIMEOUT: admin_id={admin_id} "
-                    f"idle_time={idle_time:.0f}s IP={request.remote_addr}"
-                )
-                session.pop('admin_user_id', None)
-                session.pop('admin_user_name', None)
-                session.pop('admin_user_role', None)
-                session.pop('admin_last_activity', None)
-                flash('Your admin session has expired due to inactivity. Please log in again.', 'info')
-                return redirect(url_for('admin.login'))
-        session['admin_last_activity'] = time.time()
+    # Check for admin session timeout - only on admin routes
+    # This prevents customers from being redirected to admin login when they have
+    # stale admin session data from a previous admin login
+    if request.endpoint and request.endpoint.startswith('admin.'):
+        admin_id = session.get('admin_user_id')
+        if admin_id:
+            last_admin_activity = session.get('admin_last_activity')
+            if last_admin_activity:
+                idle_time = time.time() - last_admin_activity
+                if idle_time > SESSION_IDLE_TIMEOUT:
+                    security_logger.info(
+                        f"ADMIN_SESSION_TIMEOUT: admin_id={admin_id} "
+                        f"idle_time={idle_time:.0f}s IP={request.remote_addr}"
+                    )
+                    session.pop('admin_user_id', None)
+                    session.pop('admin_user_name', None)
+                    session.pop('admin_user_role', None)
+                    session.pop('admin_last_activity', None)
+                    flash('Your admin session has expired due to inactivity. Please log in again.', 'info')
+                    return redirect(url_for('admin.login'))
+            session['admin_last_activity'] = time.time()
 
 
 @app.before_request
@@ -446,6 +452,11 @@ limiter.limit("10 per hour", error_message="Too many scan requests. Please try a
 csrf.exempt(app.view_functions['leads.speed_test_scan'])
 csrf.exempt(app.view_functions['leads.speed_test_unlock'])
 csrf.exempt(app.view_functions['leads.request_preview'])
+
+# Exempt speed battle API endpoints from CSRF (they accept JSON)
+csrf.exempt(app.view_functions['leads.speed_battle_start'])
+csrf.exempt(app.view_functions['leads.speed_battle_unlock'])
+csrf.exempt(app.view_functions['leads.speed_battle_share'])
 
 
 @login_manager.user_loader

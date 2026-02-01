@@ -490,8 +490,9 @@ def speed_battle_start():
     """
     Start a new speed battle.
     Creates a SpeedBattle record and enqueues a background job.
-    Returns the battle_uid for polling progress.
+    Returns JSON for AJAX requests, redirects for regular form submissions.
     """
+    wants_json = request.is_json or request.headers.get('Accept') == 'application/json'
     data = request.get_json() if request.is_json else request.form
 
     # Get and validate URLs
@@ -501,19 +502,28 @@ def speed_battle_start():
     # Validate challenger URL
     clean_challenger_url, error = validate_url(challenger_url)
     if error:
-        return jsonify({'error': f'Challenger URL: {error}'}), 400
+        if wants_json:
+            return jsonify({'error': f'Challenger URL: {error}'}), 400
+        flash(f'Challenger URL: {error}', 'error')
+        return redirect(url_for('leads.speed_battle'))
 
     # Validate opponent URL
     clean_opponent_url, error = validate_url(opponent_url)
     if error:
-        return jsonify({'error': f'Opponent URL: {error}'}), 400
+        if wants_json:
+            return jsonify({'error': f'Opponent URL: {error}'}), 400
+        flash(f'Opponent URL: {error}', 'error')
+        return redirect(url_for('leads.speed_battle'))
 
     # Check URLs are from different domains
     challenger_domain = get_domain(clean_challenger_url)
     opponent_domain = get_domain(clean_opponent_url)
 
     if challenger_domain == opponent_domain:
-        return jsonify({'error': 'URLs must be from different domains'}), 400
+        if wants_json:
+            return jsonify({'error': 'URLs must be from different domains'}), 400
+        flash('URLs must be from different domains', 'error')
+        return redirect(url_for('leads.speed_battle'))
 
     # Check for referrer battle
     referrer_battle_id = None
@@ -535,7 +545,10 @@ def speed_battle_start():
         )
 
         if not battle:
-            return jsonify({'error': 'Failed to create battle record'}), 500
+            if wants_json:
+                return jsonify({'error': 'Failed to create battle record'}), 500
+            flash('Failed to create battle. Please try again.', 'error')
+            return redirect(url_for('leads.speed_battle'))
 
         # Enqueue background job
         try:
@@ -560,14 +573,21 @@ def speed_battle_start():
             logger.error(f"Failed to enqueue battle job: {e}")
             # Continue anyway - job can be retried
 
-        return jsonify({
-            'battle_uid': battle.battle_uid,
-            'redirect_url': url_for('leads.speed_battle_results', battle_uid=battle.battle_uid)
-        })
+        # Return JSON for AJAX, redirect for regular form submission
+        results_url = url_for('leads.speed_battle_results', battle_uid=battle.battle_uid)
+        if wants_json:
+            return jsonify({
+                'battle_uid': battle.battle_uid,
+                'redirect_url': results_url
+            })
+        return redirect(results_url)
 
     except Exception as e:
         logger.error(f"Error creating battle: {e}")
-        return jsonify({'error': 'An error occurred. Please try again.'}), 500
+        if wants_json:
+            return jsonify({'error': 'An error occurred. Please try again.'}), 500
+        flash('An error occurred. Please try again.', 'error')
+        return redirect(url_for('leads.speed_battle'))
 
 
 @leads_bp.route('/speed-battle/<battle_uid>')
