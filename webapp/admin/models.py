@@ -21,8 +21,9 @@ from models import get_db_connection
 ADMIN_ROLES = [
     'super_admin',    # Everything - full system access including settings
     'admin',          # Everything except system settings
+    'marketing',      # Marketing Command Center access
     'finance_admin',  # Billing & revenue only (read-only)
-    'acquisition',    # Leads & migration previews only (NEW - for sales/marketing)
+    'acquisition',    # Leads & migration previews only (for sales)
     'support',        # Tickets & limited refunds
 ]
 
@@ -30,6 +31,7 @@ ADMIN_ROLES = [
 ROLE_DESCRIPTIONS = {
     'super_admin': 'Full system access including settings',
     'admin': 'Full access except system settings',
+    'marketing': 'Marketing Command Center - content, analytics, campaigns',
     'finance_admin': 'Billing and revenue (read-only)',
     'acquisition': 'Leads and migration previews only',
     'support': 'Tickets and limited refunds',
