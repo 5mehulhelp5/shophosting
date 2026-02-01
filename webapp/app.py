@@ -2493,7 +2493,7 @@ def api_container_status():
                 hours, remainder = divmod(delta.seconds, 3600)
                 minutes, _ = divmod(remainder, 60)
                 uptime_str = f"{days}d {hours}h {minutes}m"
-            except:
+            except (TypeError, ValueError, AttributeError):
                 uptime_str = "unknown"
 
         return jsonify({

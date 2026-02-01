@@ -1313,7 +1313,7 @@ def get_all_billing_settings():
             try:
                 import json
                 settings[row['setting_key']] = json.loads(row['setting_value'])
-            except:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 settings[row['setting_key']] = row['setting_value']
 
         return settings

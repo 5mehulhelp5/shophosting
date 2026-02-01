@@ -114,7 +114,7 @@ class PortManager:
 
         try:
             # Get all currently used ports
-            cursor.execute("SELECT web_port FROM customers WHERE web_port IS NOT NULL")
+            cursor.execute("SELECT web_port FROM customers WHERE web_port IS NOT NULL FOR UPDATE")
             used_ports = {row[0] for row in cursor.fetchall()}
 
             # Find first available port in range
@@ -2260,7 +2260,7 @@ class StagingPortManager:
 
         try:
             # Get all currently used staging ports
-            cursor.execute("SELECT web_port FROM staging_environments WHERE web_port IS NOT NULL AND status != 'deleted'")
+            cursor.execute("SELECT web_port FROM staging_environments WHERE web_port IS NOT NULL AND status != 'deleted' FOR UPDATE")
             used_ports = {row[0] for row in cursor.fetchall()}
 
             # Find first available port in range
