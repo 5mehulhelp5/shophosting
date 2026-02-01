@@ -5,6 +5,7 @@ echo "[shophosting.io] Magento entrypoint-wrapper starting..."
 
 # Support both naming conventions for database config
 DB_HOST="${MAGENTO_DATABASE_HOST:-${DB_HOST:-db}}"
+DB_NAME="${MAGENTO_DATABASE_NAME:-${DB_NAME:-magento}}"
 DB_USER="${MAGENTO_DATABASE_USER:-${DB_USER:-magento}}"
 DB_PASSWORD="${MAGENTO_DATABASE_PASSWORD:-${DB_PASSWORD:-}}"
 ES_HOST="${ELASTICSEARCH_HOST:-${OPENSEARCH_HOST:-elasticsearch}}"
@@ -46,17 +47,93 @@ until curl -s "http://${ES_HOST}:${ES_PORT}/_cluster/health" | grep -q '"status"
 done
 echo "[shophosting.io] Elasticsearch is ready!"
 
-echo "[shophosting.io] All dependencies ready. Starting Magento..."
+echo "[shophosting.io] All dependencies ready. Setting up volumes..."
+
+# Ensure volume directories exist with correct ownership
+mkdir -p /var/www/html/pub/media
+mkdir -p /var/www/html/var
+mkdir -p /var/www/html/generated
+mkdir -p /var/www/html/pub/static
+mkdir -p /var/www/html/app/etc
+
+# Seed generated/ from base image if empty
+if [ ! -f /var/www/html/generated/.seeded ]; then
+    echo "[shophosting.io] Seeding generated/ from base image..."
+    if [ -d /usr/src/magento-base/generated ] && [ "$(ls -A /usr/src/magento-base/generated 2>/dev/null)" ]; then
+        cp -r /usr/src/magento-base/generated/* /var/www/html/generated/ 2>/dev/null || true
+    fi
+    touch /var/www/html/generated/.seeded
+fi
+
+# Seed pub/static/ from base image if empty
+if [ ! -f /var/www/html/pub/static/.seeded ]; then
+    echo "[shophosting.io] Seeding pub/static/ from base image..."
+    if [ -d /usr/src/magento-base/static ] && [ "$(ls -A /usr/src/magento-base/static 2>/dev/null)" ]; then
+        cp -r /usr/src/magento-base/static/* /var/www/html/pub/static/ 2>/dev/null || true
+    fi
+    touch /var/www/html/pub/static/.seeded
+fi
+
+# Generate app/etc/env.php if missing (first boot)
+if [ ! -f /var/www/html/app/etc/env.php ]; then
+    echo "[shophosting.io] First boot detected - running Magento setup..."
+
+    MAGENTO_HOST="${MAGENTO_HOST:-localhost}"
+    MAGENTO_USERNAME="${MAGENTO_USERNAME:-admin}"
+    MAGENTO_PASSWORD="${MAGENTO_PASSWORD:-Admin123!}"
+    MAGENTO_EMAIL="${MAGENTO_EMAIL:-admin@example.com}"
+
+    cd /var/www/html
+
+    # Run Magento setup
+    bin/magento setup:install \
+        --base-url="https://${MAGENTO_HOST}/" \
+        --db-host="${DB_HOST}" \
+        --db-name="${DB_NAME}" \
+        --db-user="${DB_USER}" \
+        --db-password="${DB_PASSWORD}" \
+        --admin-firstname="Admin" \
+        --admin-lastname="User" \
+        --admin-email="${MAGENTO_EMAIL}" \
+        --admin-user="${MAGENTO_USERNAME}" \
+        --admin-password="${MAGENTO_PASSWORD}" \
+        --language=en_US \
+        --currency=USD \
+        --timezone=America/New_York \
+        --use-rewrites=1 \
+        --search-engine=elasticsearch7 \
+        --elasticsearch-host="${ES_HOST}" \
+        --elasticsearch-port="${ES_PORT}" \
+        --no-interaction
+
+    # Compile DI if not already done
+    if [ ! -f /var/www/html/generated/metadata/global.php ]; then
+        echo "[shophosting.io] Compiling DI..."
+        bin/magento setup:di:compile --no-interaction || true
+    fi
+
+    # Deploy static content if needed
+    if [ -z "$(ls -A /var/www/html/pub/static/frontend 2>/dev/null)" ]; then
+        echo "[shophosting.io] Deploying static content..."
+        bin/magento setup:static-content:deploy -f en_US --no-interaction || true
+    fi
+
+    echo "[shophosting.io] Magento setup complete!"
+else
+    echo "[shophosting.io] Magento already configured, skipping setup."
+fi
+
+# Fix permissions on writable directories
+chown -R www-data:www-data /var/www/html/var /var/www/html/pub/media /var/www/html/generated /var/www/html/pub/static /var/www/html/app/etc 2>/dev/null || true
+
+echo "[shophosting.io] Starting Magento..."
 
 # Start background process to fix PHP-FPM socket permissions
-# This is needed because nginx runs as 'nobody' but PHP-FPM creates socket with 0660
-# The socket is created after s6-overlay starts PHP-FPM, so we need to wait for it
 (
     SOCKET_PATH="/run/php-fpm.sock"
     MAX_WAIT=120
     WAITED=0
 
-    # Wait for socket to exist
     while [ ! -S "$SOCKET_PATH" ] && [ $WAITED -lt $MAX_WAIT ]; do
         sleep 1
         WAITED=$((WAITED + 1))
@@ -67,10 +144,8 @@ echo "[shophosting.io] All dependencies ready. Starting Magento..."
         echo "[shophosting.io] Fixed PHP-FPM socket permissions"
     fi
 
-    # Keep monitoring and fixing in case socket is recreated (e.g., PHP-FPM restart)
     while true; do
         if [ -S "$SOCKET_PATH" ]; then
-            # Check current permissions and fix if needed
             PERMS=$(stat -c %a "$SOCKET_PATH" 2>/dev/null || echo "666")
             if [ "$PERMS" != "666" ]; then
                 chmod 0666 "$SOCKET_PATH"
