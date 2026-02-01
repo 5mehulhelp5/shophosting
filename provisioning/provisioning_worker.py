@@ -338,10 +338,30 @@ class ProvisioningWorker:
             
             # Create directory structure (exist_ok=True for idempotency)
             customer_path.mkdir(parents=True, exist_ok=True)
-            (customer_path / "volumes").mkdir(exist_ok=True)
-            (customer_path / "volumes" / "db").mkdir(exist_ok=True)
-            (customer_path / "volumes" / "files").mkdir(exist_ok=True)
             (customer_path / "logs").mkdir(exist_ok=True)
+
+            if platform == 'woocommerce':
+                # WordPress: selective wp-content directories
+                (customer_path / "uploads").mkdir(exist_ok=True)
+                (customer_path / "plugins").mkdir(exist_ok=True)
+                (customer_path / "themes").mkdir(exist_ok=True)
+                (customer_path / "mysql").mkdir(exist_ok=True)
+                (customer_path / "redis").mkdir(exist_ok=True)
+                # Set ownership for www-data (UID 33)
+                for subdir in ['uploads', 'plugins', 'themes']:
+                    os.chown(customer_path / subdir, 33, 33)
+            else:
+                # Magento: selective volume directories
+                (customer_path / "volumes").mkdir(exist_ok=True)
+                (customer_path / "volumes" / "db").mkdir(exist_ok=True)
+                (customer_path / "volumes" / "media").mkdir(exist_ok=True)
+                (customer_path / "volumes" / "var").mkdir(exist_ok=True)
+                (customer_path / "volumes" / "generated").mkdir(exist_ok=True)
+                (customer_path / "volumes" / "static").mkdir(exist_ok=True)
+                (customer_path / "volumes" / "app-etc").mkdir(exist_ok=True)
+                # Set ownership for www-data (UID 33)
+                for subdir in ['media', 'var', 'generated', 'static', 'app-etc']:
+                    os.chown(customer_path / "volumes" / subdir, 33, 33)
 
             # Create Varnish directory and config for Magento
             if platform == 'magento':
