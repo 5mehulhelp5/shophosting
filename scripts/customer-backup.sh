@@ -1,132 +1,153 @@
 #!/bin/bash
-# Customer Manual Backup Script
-# Creates a backup for a single customer to the manual backups repository
-# Usage: customer-backup.sh <customer_id> <backup_type: db|files|both>
+# Customer Backup Script
+# Backs up a specific customer's data to remote VPS using restic
+# Usage: ./customer-backup.sh <customer_id>
 
 set -euo pipefail
 
-# Arguments
-CUSTOMER_ID="${1:-}"
-BACKUP_TYPE="${2:-both}"
+if [ -z "$1" ]; then
+    echo "Usage: $0 <customer_id>"
+    exit 1
+fi
 
-if [ -z "$CUSTOMER_ID" ]; then
-    echo "Usage: $0 <customer_id> <backup_type: db|files|both>"
+CUSTOMER_ID="$1"
+CUSTOMER_DIR="/var/customers/customer-${CUSTOMER_ID}"
+
+if [ ! -d "$CUSTOMER_DIR" ]; then
+    echo "ERROR: Customer directory not found: $CUSTOMER_DIR"
     exit 1
 fi
 
 # Configuration
-RESTIC_REPOSITORY="sftp:sh-backup@15.204.249.219:/home/sh-backup/manual-backups"
-RESTIC_PASSWORD_FILE="/opt/shophosting/.manual-restic-password"
-CUSTOMER_PATH="/var/customers/customer-${CUSTOMER_ID}"
-DB_DUMP_DIR="/tmp/customer-backup-${CUSTOMER_ID}"
-MAX_BACKUPS=5
-TIMESTAMP=$(date +%Y-%m-%d-%H%M%S)
+RESTIC_REPOSITORY="sftp:sh-backup@15.204.249.219:/home/sh-backup/backups"
+RESTIC_PASSWORD_FILE="/opt/shophosting/.restic-password"
+BACKUP_LOG="/var/log/shophosting-customer-backup.log"
+DB_DUMP_DIR="/tmp/shophosting-customer-backup-${CUSTOMER_ID}"
+RETENTION_DAYS=14
 
-# Load environment variables safely (handle special characters in values)
-ENV_FILE="/opt/shophosting/.env"
-DB_HOST=$(grep -E "^DB_HOST=" "$ENV_FILE" | cut -d= -f2-)
-DB_USER=$(grep -E "^DB_USER=" "$ENV_FILE" | cut -d= -f2-)
-DB_PASSWORD=$(grep -E "^DB_PASSWORD=" "$ENV_FILE" | cut -d= -f2-)
+# Load environment
+load_env() {
+    if [ -f /opt/shophosting/.env ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            if [[ "$line" =~ ^#.*$ ]] || [[ -z "${line// }" ]]; then
+                continue
+            fi
+            if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+                key="${BASH_REMATCH[1]}"
+                value="${BASH_REMATCH[2]}"
+                # Strip surrounding quotes (single or double)
+                value="${value#\'}"
+                value="${value%\'}"
+                value="${value#\"}"
+                value="${value%\"}"
+                export "$key=$value"
+            fi
+        done < /opt/shophosting/.env
+    fi
+}
 
-# Export for restic
+load_env
+
 export RESTIC_REPOSITORY
 export RESTIC_PASSWORD_FILE
 export HOME=/root
 export XDG_CACHE_HOME=/root/.cache
 
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [Customer ${CUSTOMER_ID}] $1" | tee -a "$BACKUP_LOG"
 }
 
-error_exit() {
-    log "ERROR: $1"
-    exit 1
-}
+log "=========================================="
+log "Starting backup for customer ${CUSTOMER_ID}"
+log "=========================================="
 
-# Validate customer directory exists
-if [ ! -d "$CUSTOMER_PATH" ]; then
-    error_exit "Customer directory not found: $CUSTOMER_PATH"
-fi
+# Create temp directory
+mkdir -p "$DB_DUMP_DIR"
 
-log "Starting backup for customer $CUSTOMER_ID (type: $BACKUP_TYPE)"
-
-# Prepare backup paths
-BACKUP_PATHS=()
-BACKUP_TAGS=("customer-${CUSTOMER_ID}" "manual" "$BACKUP_TYPE" "$TIMESTAMP")
-
-# Handle database backup
-if [ "$BACKUP_TYPE" = "db" ] || [ "$BACKUP_TYPE" = "both" ]; then
-    log "Dumping customer database..."
-    mkdir -p "$DB_DUMP_DIR"
-    rm -f "$DB_DUMP_DIR"/*.sql
-
-    # Customer database runs in Docker container
-    CONTAINER_NAME="customer-${CUSTOMER_ID}-db"
-    CUSTOMER_DB="customer_${CUSTOMER_ID}"
-
-    # Get MySQL root password from docker-compose.yml
-    COMPOSE_FILE="${CUSTOMER_PATH}/docker-compose.yml"
-    if [ ! -f "$COMPOSE_FILE" ]; then
-        error_exit "Docker compose file not found: $COMPOSE_FILE"
+# Detect platform and get database info
+if [ -f "${CUSTOMER_DIR}/.platform" ]; then
+    PLATFORM=$(cat "${CUSTOMER_DIR}/.platform")
+else
+    # Try to detect from docker-compose.yml
+    if [ -f "${CUSTOMER_DIR}/docker-compose.yml" ]; then
+        if grep -q "wordpress" "${CUSTOMER_DIR}/docker-compose.yml"; then
+            PLATFORM="woocommerce"
+        elif grep -q "magento" "${CUSTOMER_DIR}/docker-compose.yml"; then
+            PLATFORM="magento"
+        else
+            PLATFORM="unknown"
+        fi
+    else
+        PLATFORM="unknown"
     fi
-
-    MYSQL_ROOT_PASSWORD=$(grep -A1 "MYSQL_ROOT_PASSWORD:" "$COMPOSE_FILE" | head -1 | sed 's/.*: *"\?\([^"]*\)"\?/\1/' | tr -d ' "')
-
-    # Check if container is running
-    if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-        error_exit "Database container not running: $CONTAINER_NAME"
-    fi
-
-    # Dump the database from inside the container
-    docker exec "$CONTAINER_NAME" mysqldump \
-        -u root \
-        -p"${MYSQL_ROOT_PASSWORD}" \
-        --single-transaction \
-        "$CUSTOMER_DB" > "$DB_DUMP_DIR/${CUSTOMER_DB}.sql" 2>/dev/null \
-        || error_exit "Failed to dump database $CUSTOMER_DB"
-
-    log "Database dump complete: $(du -h "$DB_DUMP_DIR/${CUSTOMER_DB}.sql" | cut -f1)"
-    BACKUP_PATHS+=("$DB_DUMP_DIR")
 fi
 
-# Handle files backup
-if [ "$BACKUP_TYPE" = "files" ] || [ "$BACKUP_TYPE" = "both" ]; then
-    log "Adding customer files to backup..."
-    BACKUP_PATHS+=("$CUSTOMER_PATH")
-fi
+log "Detected platform: ${PLATFORM}"
+
+# Backup database based on platform
+case "$PLATFORM" in
+    woocommerce)
+        # WordPress uses MySQL
+        log "Backing up WordPress database..."
+        DB_CONTAINER="customer-${CUSTOMER_ID}-db"
+        if docker ps --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
+            docker exec "$DB_CONTAINER" mysqldump -u root -p"${MYSQL_ROOT_PASSWORD:-rootpassword}" wordpress > "${DB_DUMP_DIR}/database.sql" 2>/dev/null || \
+            docker exec "$DB_CONTAINER" mysqldump -u root -prootpassword wordpress > "${DB_DUMP_DIR}/database.sql" 2>/dev/null || \
+            log "Warning: Could not backup database"
+        else
+            log "Warning: Database container not found"
+        fi
+        ;;
+    magento)
+        # Magento uses MySQL
+        log "Backing up Magento database..."
+        DB_CONTAINER="customer-${CUSTOMER_ID}-db"
+        if docker ps --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
+            docker exec "$DB_CONTAINER" mysqldump -u root -p"${MYSQL_ROOT_PASSWORD:-rootpassword}" magento > "${DB_DUMP_DIR}/database.sql" 2>/dev/null || \
+            log "Warning: Could not backup database"
+        else
+            log "Warning: Database container not found"
+        fi
+        ;;
+    *)
+        log "Unknown platform, skipping database backup"
+        ;;
+esac
 
 # Run restic backup
-log "Running restic backup..."
-TAG_ARGS=""
-for tag in "${BACKUP_TAGS[@]}"; do
-    TAG_ARGS="$TAG_ARGS --tag $tag"
-done
+log "Starting restic backup..."
+CUSTOMER_TAG="customer-${CUSTOMER_ID}"
+CUSTOMER_BACKUP_DIRS="${DB_DUMP_DIR} ${CUSTOMER_DIR}"
 
-restic backup $TAG_ARGS "${BACKUP_PATHS[@]}" \
-    || error_exit "Restic backup failed"
+restic backup \
+    --tag "customer" \
+    --tag "$CUSTOMER_TAG" \
+    --tag "manual" \
+    --tag "$(date +%Y-%m-%d-%H%M%S)" \
+    $CUSTOMER_BACKUP_DIRS \
+    2>&1 | tee -a "$BACKUP_LOG"
 
-# Get the snapshot ID of the backup we just created
-SNAPSHOT_ID=$(restic snapshots --json --latest 1 --tag "customer-${CUSTOMER_ID}" --tag "manual" 2>/dev/null \
-    | python3 -c "import sys,json; data=json.load(sys.stdin); print(data[0]['id'] if data else '')" 2>/dev/null)
-
-log "Backup complete. Snapshot ID: $SNAPSHOT_ID"
-
-# Enforce retention: keep only MAX_BACKUPS per customer
-log "Enforcing retention policy (max $MAX_BACKUPS backups)..."
-CUSTOMER_SNAPSHOTS=$(restic snapshots --json --tag "customer-${CUSTOMER_ID}" --tag "manual" 2>/dev/null \
-    | python3 -c "import sys,json; data=json.load(sys.stdin); print(len(data))" 2>/dev/null || echo "0")
-
-if [ "$CUSTOMER_SNAPSHOTS" -gt "$MAX_BACKUPS" ]; then
-    log "Customer has $CUSTOMER_SNAPSHOTS backups, pruning to $MAX_BACKUPS..."
-    restic forget --tag "customer-${CUSTOMER_ID}" --tag "manual" --keep-last "$MAX_BACKUPS" --prune \
-        || log "Warning: Retention enforcement failed"
+if [ ${PIPESTATUS[0]} -eq 0 ]; then
+    log "Backup completed successfully"
+    
+    # Get snapshot ID
+    SNAPSHOT_ID=$(restic snapshots --json --tag "$CUSTOMER_TAG" --latest 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)[0]['id'])" 2>/dev/null || echo "unknown")
+    log "Snapshot ID: $SNAPSHOT_ID"
+    
+    # Apply retention for this customer's snapshots
+    log "Applying retention policy (keeping ${RETENTION_DAYS} snapshots)..."
+    restic forget \
+        --tag "$CUSTOMER_TAG" \
+        --keep-last "$RETENTION_DAYS" \
+        --prune \
+        2>&1 | tee -a "$BACKUP_LOG" || log "Warning: Retention policy application had issues"
+else
+    log "ERROR: Backup failed"
 fi
 
 # Cleanup
-if [ -d "$DB_DUMP_DIR" ]; then
-    rm -rf "$DB_DUMP_DIR"
-fi
+log "Cleaning up temporary files..."
+rm -rf "$DB_DUMP_DIR"
 
-log "Backup completed successfully"
-echo "SNAPSHOT_ID=$SNAPSHOT_ID"
+log "Backup process completed"
 exit 0
