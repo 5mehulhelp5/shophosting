@@ -624,6 +624,14 @@
                 transparent 100%);
         }
 
+        /* Footer adjustments for landscape mobile */
+        @media (max-height: 500px) and (orientation: landscape) {
+            footer {
+                padding: 20px 0;
+                font-size: 0.8rem;
+            }
+        }
+
         /* ===== TYPOGRAPHY ===== */
         h1, h2, h3, h4, h5, h6 {
             font-family: 'Orbitron', sans-serif;
