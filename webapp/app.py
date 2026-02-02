@@ -2823,16 +2823,17 @@ def api_backup_status():
         return jsonify({'error': 'Backup service not configured'}), 503
 
     try:
+        # Use sudo to run restic as root (required for SSH key access to backup server)
+        restic_cmd = (
+            f'export RESTIC_REPOSITORY="{restic_repo}" && '
+            f'export RESTIC_PASSWORD_FILE="{restic_password_file}" && '
+            f'export HOME=/root && '
+            f'restic snapshots --json --tag "customer-{customer.id}" --latest 20'
+        )
         result = subprocess.run(
-            [
-                'restic', 'snapshots', '--json',
-                '--tag', f'customer-{customer.id}',
-                '--latest', '20'
-            ],
+            ['sudo', '/bin/bash', '-c', restic_cmd],
             capture_output=True, text=True,
-            env={**os.environ, 'RESTIC_REPOSITORY': restic_repo,
-                 'RESTIC_PASSWORD_FILE': restic_password_file},
-            timeout=30  # Add timeout to prevent hanging
+            timeout=30
         )
 
         if result.returncode == 0:
@@ -2850,6 +2851,7 @@ def api_backup_status():
                 'snapshots': snapshot_list
             })
         else:
+            logger.error(f"Restic snapshots failed: {result.stderr}")
             return jsonify({
                 'success': False,
                 'error': 'Could not fetch backup status'
@@ -3555,10 +3557,10 @@ def get_customer_manual_backups(customer_id, limit=5):
     try:
         result = subprocess.run(
             ['sudo', 'bash', '-c',
-             f'export RESTIC_REPOSITORY="sftp:sh-backup@15.204.249.219:/home/sh-backup/manual-backups" && '
-             f'export RESTIC_PASSWORD_FILE="/opt/shophosting/.manual-restic-password" && '
+             f'export RESTIC_REPOSITORY="sftp:sh-backup@15.204.249.219:/home/sh-backup/backups" && '
+             f'export RESTIC_PASSWORD_FILE="/root/.restic-password" && '
              f'export HOME=/root && '
-             f'restic snapshots --json --tag "customer-{customer_id}" --tag "manual"'],
+             f'restic snapshots --json --tag "customer-{customer_id}"'],
             capture_output=True,
             text=True,
             timeout=30
@@ -3596,9 +3598,8 @@ def get_customer_daily_backups(customer_id, limit=10):
         if result.returncode == 0 and result.stdout.strip():
             import json
             snapshots = json.loads(result.stdout)
-            # Filter to snapshots that have customer path, sort descending
-            customer_path = f"/var/customers/customer-{customer_id}"
-            filtered = [s for s in snapshots if any(customer_path in p for p in s.get('paths', []))]
+            # Filter to snapshots that have /var/customers in paths (daily backups include all customers)
+            filtered = [s for s in snapshots if any('/var/customers' in p for p in s.get('paths', []))]
             filtered.sort(key=lambda x: x.get('time', ''), reverse=True)
             return filtered[:limit]
     except Exception as e:

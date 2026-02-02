@@ -26,6 +26,7 @@ services:
     container_name: {{ container_prefix }}-web
     user: root
     restart: unless-stopped
+    command: ["/init"]
     expose:
       - "80"
     environment:
