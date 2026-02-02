@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ShopHosting.io Monitoring Worker
-Performs health checks on all active customer sites
+Performs health checks on all active customer sites and collects performance metrics.
 """
 
 import os
@@ -12,6 +12,8 @@ import requests
 import subprocess
 import json
 from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any
 
 # Add webapp to path for model imports
 sys.path.insert(0, '/opt/shophosting/webapp')
@@ -20,7 +22,8 @@ from dotenv import load_dotenv
 load_dotenv('/opt/shophosting/.env')
 
 from models import (
-    Customer, CustomerMonitoringStatus, MonitoringCheck, MonitoringAlert
+    Customer, CustomerMonitoringStatus, MonitoringCheck, MonitoringAlert,
+    get_db_connection
 )
 
 # Configuration - can be overridden via environment variables
@@ -31,6 +34,8 @@ ALERT_COOLDOWN = int(os.getenv('MONITORING_ALERT_COOLDOWN', '300'))  # seconds b
 RESOURCE_WARNING_CPU = float(os.getenv('MONITORING_CPU_WARNING', '80'))  # % CPU threshold
 RESOURCE_WARNING_MEMORY = float(os.getenv('MONITORING_MEMORY_WARNING', '85'))  # % memory threshold
 CLEANUP_INTERVAL = int(os.getenv('MONITORING_CLEANUP_INTERVAL', '3600'))  # cleanup every hour
+PERFORMANCE_METRICS_ENABLED = os.getenv('PERFORMANCE_METRICS_ENABLED', 'true').lower() == 'true'
+SLOW_QUERY_THRESHOLD_MS = int(os.getenv('SLOW_QUERY_THRESHOLD_MS', '1000'))  # 1 second
 
 # Setup logging
 logging.basicConfig(
@@ -38,6 +43,136 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('monitoring_worker')
+
+
+@dataclass
+class PerformanceMetrics:
+    """Container for collected performance metrics"""
+    customer_id: int
+    timestamp: datetime = field(default_factory=datetime.now)
+
+    # Page speed (from HTTP probe)
+    ttfb_ms: Optional[int] = None
+
+    # Resources (from container check)
+    cpu_percent: Optional[float] = None
+    memory_percent: Optional[float] = None
+    disk_percent: Optional[float] = None
+
+    # Database metrics
+    slow_query_count: Optional[int] = None
+    active_connections: Optional[int] = None
+    table_size_bytes: Optional[int] = None
+
+    # Cache metrics
+    redis_hit_rate: Optional[float] = None
+    redis_memory_bytes: Optional[int] = None
+    varnish_hit_rate: Optional[float] = None
+
+    def save(self):
+        """Store performance snapshot in database"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Calculate a preliminary health score (0-100)
+            # Full health score calculation will be done in Task 3
+            health_score = self._calculate_preliminary_health_score()
+
+            cursor.execute("""
+                INSERT INTO performance_snapshots
+                (customer_id, timestamp, health_score, ttfb_ms,
+                 cpu_percent, memory_percent, disk_percent,
+                 slow_query_count, active_connections, db_size_bytes,
+                 redis_hit_rate, varnish_hit_rate)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                self.customer_id, self.timestamp, health_score, self.ttfb_ms,
+                self.cpu_percent, self.memory_percent, self.disk_percent,
+                self.slow_query_count, self.active_connections, self.table_size_bytes,
+                self.redis_hit_rate, self.varnish_hit_rate
+            ))
+            conn.commit()
+            logger.debug(f"Saved performance snapshot for customer {self.customer_id}")
+        except Exception as e:
+            logger.error(f"Failed to save performance snapshot: {e}")
+            conn.rollback()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def _calculate_preliminary_health_score(self) -> int:
+        """
+        Calculate a preliminary health score (0-100).
+        This is a simplified version - Task 3 will implement the full algorithm.
+        """
+        score = 100
+        deductions = 0
+
+        # TTFB scoring (target < 500ms)
+        if self.ttfb_ms is not None:
+            if self.ttfb_ms > 3000:
+                deductions += 30
+            elif self.ttfb_ms > 1500:
+                deductions += 20
+            elif self.ttfb_ms > 500:
+                deductions += 10
+
+        # CPU scoring
+        if self.cpu_percent is not None:
+            if self.cpu_percent > 90:
+                deductions += 20
+            elif self.cpu_percent > 80:
+                deductions += 10
+            elif self.cpu_percent > 70:
+                deductions += 5
+
+        # Memory scoring
+        if self.memory_percent is not None:
+            if self.memory_percent > 95:
+                deductions += 20
+            elif self.memory_percent > 85:
+                deductions += 10
+            elif self.memory_percent > 75:
+                deductions += 5
+
+        # Slow query scoring
+        if self.slow_query_count is not None:
+            if self.slow_query_count > 10:
+                deductions += 20
+            elif self.slow_query_count > 5:
+                deductions += 10
+            elif self.slow_query_count > 0:
+                deductions += 5
+
+        # Cache hit rate scoring
+        if self.redis_hit_rate is not None:
+            if self.redis_hit_rate < 50:
+                deductions += 15
+            elif self.redis_hit_rate < 70:
+                deductions += 10
+            elif self.redis_hit_rate < 80:
+                deductions += 5
+
+        return max(0, score - deductions)
+
+    @staticmethod
+    def cleanup_old_snapshots(hours: int = 168) -> int:
+        """Delete snapshots older than specified hours (default 7 days)"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                DELETE FROM performance_snapshots
+                WHERE timestamp < DATE_SUB(NOW(), INTERVAL %s HOUR)
+            """, (hours,))
+            deleted = cursor.rowcount
+            conn.commit()
+            return deleted
+        finally:
+            cursor.close()
+            conn.close()
 
 
 class MonitoringWorker:
@@ -62,6 +197,13 @@ class MonitoringWorker:
                     deleted = MonitoringCheck.cleanup_old_checks(hours=48)
                     if deleted > 0:
                         logger.info(f"Cleaned up {deleted} old monitoring checks")
+
+                    # Clean up old performance snapshots (keep 7 days)
+                    if PERFORMANCE_METRICS_ENABLED:
+                        perf_deleted = PerformanceMetrics.cleanup_old_snapshots(hours=168)
+                        if perf_deleted > 0:
+                            logger.info(f"Cleaned up {perf_deleted} old performance snapshots")
+
                     self.last_cleanup = datetime.now()
 
             except Exception as e:
@@ -84,8 +226,8 @@ class MonitoringWorker:
         """Run all checks for a single customer"""
         status = CustomerMonitoringStatus.get_or_create(customer.id)
 
-        # HTTP check
-        http_ok, http_time = self.check_http(customer)
+        # HTTP check with TTFB measurement
+        http_ok, http_time, ttfb_ms = self.check_http_with_ttfb(customer)
         http_status = 'up' if http_ok else 'down'
 
         status.update_http_status(http_status, http_time)
@@ -100,7 +242,8 @@ class MonitoringWorker:
         container_ok, cpu, mem_mb, disk_mb = self.check_container(customer)
         container_status = 'up' if container_ok else 'down'
 
-        # Check for degraded (high resource usage)
+        # Calculate memory percentage
+        mem_percent = None
         if container_ok:
             if cpu is not None and cpu > RESOURCE_WARNING_CPU:
                 container_status = 'degraded'
@@ -144,10 +287,22 @@ class MonitoringWorker:
         # Handle alerting
         self.process_alerts(customer, status, http_ok, container_ok)
 
+        # Collect and store performance metrics if enabled
+        if PERFORMANCE_METRICS_ENABLED and container_ok:
+            self.collect_performance_metrics(customer, ttfb_ms, cpu, mem_percent)
+
     def check_http(self, customer):
         """
-        HTTP health check.
+        HTTP health check (legacy method for compatibility).
         Returns: (success: bool, response_time_ms: int or None)
+        """
+        success, response_time, _ = self.check_http_with_ttfb(customer)
+        return success, response_time
+
+    def check_http_with_ttfb(self, customer):
+        """
+        HTTP health check with Time to First Byte measurement.
+        Returns: (success: bool, response_time_ms: int or None, ttfb_ms: int or None)
         """
         url = f"https://{customer.domain}/"
 
@@ -157,8 +312,16 @@ class MonitoringWorker:
                 url,
                 timeout=HTTP_TIMEOUT,
                 allow_redirects=True,
-                headers={'User-Agent': 'ShopHosting-Monitor/1.0'}
+                headers={'User-Agent': 'ShopHosting-Monitor/1.0'},
+                stream=True  # Enable streaming to get accurate TTFB
             )
+
+            # TTFB is the time until we receive the first byte of response
+            ttfb_ms = int((time.time() - start) * 1000)
+
+            # Read the rest of the response
+            _ = resp.content
+
             elapsed_ms = int((time.time() - start) * 1000)
 
             # Consider 2xx and 3xx as success, 5xx as failure
@@ -168,17 +331,17 @@ class MonitoringWorker:
             if not is_ok:
                 logger.warning(f"{customer.domain}: HTTP {resp.status_code}")
 
-            return is_ok, elapsed_ms
+            return is_ok, elapsed_ms, ttfb_ms
 
         except requests.exceptions.Timeout:
             logger.warning(f"{customer.domain}: HTTP timeout")
-            return False, None
+            return False, None, None
         except requests.exceptions.ConnectionError as e:
             logger.warning(f"{customer.domain}: Connection error - {e}")
-            return False, None
+            return False, None, None
         except Exception as e:
             logger.error(f"{customer.domain}: HTTP check error - {e}")
-            return False, None
+            return False, None, None
 
     def check_container(self, customer):
         """
@@ -241,6 +404,246 @@ class MonitoringWorker:
         except Exception as e:
             logger.error(f"{customer.domain}: Container check error - {e}")
             return False, None, None, None
+
+    def collect_performance_metrics(self, customer, ttfb_ms, cpu_percent, mem_percent):
+        """
+        Collect and store comprehensive performance metrics for a customer.
+        Called after basic health checks if container is running.
+        """
+        metrics = PerformanceMetrics(
+            customer_id=customer.id,
+            ttfb_ms=ttfb_ms,
+            cpu_percent=cpu_percent,
+            memory_percent=mem_percent
+        )
+
+        container_prefix = f"customer-{customer.id}"
+
+        # Collect MySQL metrics
+        db_metrics = self.collect_mysql_metrics(customer, container_prefix)
+        if db_metrics:
+            metrics.slow_query_count = db_metrics.get('slow_query_count')
+            metrics.active_connections = db_metrics.get('active_connections')
+            metrics.table_size_bytes = db_metrics.get('table_size_bytes')
+
+        # Collect Redis metrics
+        redis_metrics = self.collect_redis_metrics(customer, container_prefix)
+        if redis_metrics:
+            metrics.redis_hit_rate = redis_metrics.get('hit_rate')
+            metrics.redis_memory_bytes = redis_metrics.get('memory_bytes')
+
+        # Collect Varnish metrics (Magento only)
+        if customer.platform == 'magento':
+            varnish_metrics = self.collect_varnish_metrics(customer, container_prefix)
+            if varnish_metrics:
+                metrics.varnish_hit_rate = varnish_metrics.get('hit_rate')
+
+        # Save the performance snapshot
+        metrics.save()
+
+    def collect_mysql_metrics(self, customer, container_prefix) -> Optional[Dict[str, Any]]:
+        """
+        Collect MySQL performance metrics from the database container.
+        Returns dict with slow_query_count, active_connections, table_size_bytes.
+        """
+        db_container = f"{container_prefix}-db"
+
+        # Check if container exists and is running
+        if not self._container_is_running(db_container):
+            logger.debug(f"{customer.domain}: MySQL container not available")
+            return None
+
+        metrics = {}
+
+        # Escape special characters in password for shell
+        escaped_password = customer.db_password.replace("'", "'\"'\"'") if customer.db_password else ''
+
+        try:
+            # Get slow query count from performance_schema
+            # This counts queries that took > SLOW_QUERY_THRESHOLD_MS in the last interval
+            slow_query_cmd = f"""
+                docker exec {db_container} mysql -u{customer.db_user} -p'{escaped_password}' \
+                -N -e "SELECT COUNT(*) FROM performance_schema.events_statements_summary_by_digest \
+                WHERE AVG_TIMER_WAIT/1000000000 > {SLOW_QUERY_THRESHOLD_MS / 1000};" 2>/dev/null
+            """
+            result = subprocess.run(
+                slow_query_cmd, shell=True, capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                try:
+                    metrics['slow_query_count'] = int(result.stdout.strip())
+                except ValueError:
+                    metrics['slow_query_count'] = 0
+        except subprocess.TimeoutExpired:
+            logger.debug(f"{customer.domain}: Slow query check timed out")
+        except Exception as e:
+            logger.debug(f"{customer.domain}: Error getting slow query count: {e}")
+
+        try:
+            # Get active connections
+            connections_cmd = f"""
+                docker exec {db_container} mysql -u{customer.db_user} -p'{escaped_password}' \
+                -N -e "SELECT COUNT(*) FROM information_schema.PROCESSLIST;" 2>/dev/null
+            """
+            result = subprocess.run(
+                connections_cmd, shell=True, capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                try:
+                    metrics['active_connections'] = int(result.stdout.strip())
+                except ValueError:
+                    pass
+        except subprocess.TimeoutExpired:
+            logger.debug(f"{customer.domain}: Connection count check timed out")
+        except Exception as e:
+            logger.debug(f"{customer.domain}: Error getting connection count: {e}")
+
+        try:
+            # Get total database size
+            size_cmd = f"""
+                docker exec {db_container} mysql -u{customer.db_user} -p'{escaped_password}' \
+                -N -e "SELECT SUM(data_length + index_length) FROM information_schema.TABLES \
+                WHERE table_schema = '{customer.db_name}';" 2>/dev/null
+            """
+            result = subprocess.run(
+                size_cmd, shell=True, capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip() and result.stdout.strip() != 'NULL':
+                try:
+                    metrics['table_size_bytes'] = int(float(result.stdout.strip()))
+                except ValueError:
+                    pass
+        except subprocess.TimeoutExpired:
+            logger.debug(f"{customer.domain}: Database size check timed out")
+        except Exception as e:
+            logger.debug(f"{customer.domain}: Error getting database size: {e}")
+
+        return metrics if metrics else None
+
+    def collect_redis_metrics(self, customer, container_prefix) -> Optional[Dict[str, Any]]:
+        """
+        Collect Redis cache metrics from the Redis container.
+        Returns dict with hit_rate (percentage) and memory_bytes.
+        """
+        redis_container = f"{container_prefix}-redis"
+
+        # Check if container exists and is running
+        if not self._container_is_running(redis_container):
+            logger.debug(f"{customer.domain}: Redis container not available")
+            return None
+
+        metrics = {}
+
+        try:
+            # Get Redis INFO stats
+            info_cmd = f"docker exec {redis_container} redis-cli INFO stats 2>/dev/null"
+            result = subprocess.run(
+                info_cmd, shell=True, capture_output=True, text=True, timeout=10
+            )
+
+            if result.returncode == 0 and result.stdout:
+                info = result.stdout
+                keyspace_hits = None
+                keyspace_misses = None
+
+                for line in info.split('\n'):
+                    if line.startswith('keyspace_hits:'):
+                        keyspace_hits = int(line.split(':')[1].strip())
+                    elif line.startswith('keyspace_misses:'):
+                        keyspace_misses = int(line.split(':')[1].strip())
+
+                # Calculate hit rate
+                if keyspace_hits is not None and keyspace_misses is not None:
+                    total = keyspace_hits + keyspace_misses
+                    if total > 0:
+                        metrics['hit_rate'] = round((keyspace_hits / total) * 100, 2)
+                    else:
+                        # No requests yet, consider 100% hit rate
+                        metrics['hit_rate'] = 100.0
+
+        except subprocess.TimeoutExpired:
+            logger.debug(f"{customer.domain}: Redis stats check timed out")
+        except Exception as e:
+            logger.debug(f"{customer.domain}: Error getting Redis stats: {e}")
+
+        try:
+            # Get Redis memory usage
+            memory_cmd = f"docker exec {redis_container} redis-cli INFO memory 2>/dev/null"
+            result = subprocess.run(
+                memory_cmd, shell=True, capture_output=True, text=True, timeout=10
+            )
+
+            if result.returncode == 0 and result.stdout:
+                for line in result.stdout.split('\n'):
+                    if line.startswith('used_memory:'):
+                        metrics['memory_bytes'] = int(line.split(':')[1].strip())
+                        break
+
+        except subprocess.TimeoutExpired:
+            logger.debug(f"{customer.domain}: Redis memory check timed out")
+        except Exception as e:
+            logger.debug(f"{customer.domain}: Error getting Redis memory: {e}")
+
+        return metrics if metrics else None
+
+    def collect_varnish_metrics(self, customer, container_prefix) -> Optional[Dict[str, Any]]:
+        """
+        Collect Varnish cache metrics from the Varnish container.
+        Only applicable for Magento customers.
+        Returns dict with hit_rate (percentage).
+        """
+        varnish_container = f"{container_prefix}-varnish"
+
+        # Check if container exists and is running
+        if not self._container_is_running(varnish_container):
+            logger.debug(f"{customer.domain}: Varnish container not available")
+            return None
+
+        metrics = {}
+
+        try:
+            # Get Varnish stats using varnishstat
+            stats_cmd = f"docker exec {varnish_container} varnishstat -1 -f MAIN.cache_hit -f MAIN.cache_miss 2>/dev/null"
+            result = subprocess.run(
+                stats_cmd, shell=True, capture_output=True, text=True, timeout=10
+            )
+
+            if result.returncode == 0 and result.stdout:
+                cache_hit = 0
+                cache_miss = 0
+
+                for line in result.stdout.strip().split('\n'):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        if 'cache_hit' in parts[0]:
+                            cache_hit = int(parts[1])
+                        elif 'cache_miss' in parts[0]:
+                            cache_miss = int(parts[1])
+
+                total = cache_hit + cache_miss
+                if total > 0:
+                    metrics['hit_rate'] = round((cache_hit / total) * 100, 2)
+                else:
+                    # No requests yet
+                    metrics['hit_rate'] = 100.0
+
+        except subprocess.TimeoutExpired:
+            logger.debug(f"{customer.domain}: Varnish stats check timed out")
+        except Exception as e:
+            logger.debug(f"{customer.domain}: Error getting Varnish stats: {e}")
+
+        return metrics if metrics else None
+
+    def _container_is_running(self, container_name: str) -> bool:
+        """Check if a Docker container exists and is running."""
+        try:
+            result = subprocess.run(
+                ['docker', 'inspect', container_name, '--format', '{{.State.Running}}'],
+                capture_output=True, text=True, timeout=5
+            )
+            return result.returncode == 0 and 'true' in result.stdout.lower()
+        except (subprocess.TimeoutExpired, Exception):
+            return False
 
     def process_alerts(self, customer, status, http_ok, container_ok):
         """Handle alert logic based on check results"""
