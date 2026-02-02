@@ -1,109 +1,143 @@
 # ShopHosting.io
 
-A multi-tenant Docker hosting platform that automatically provisions containerized e-commerce stores (WooCommerce and Magento) on-demand.
+A production-ready, multi-tenant Docker hosting platform that automatically provisions containerized e-commerce stores (WooCommerce and Magento) on-demand with full infrastructure management, billing, monitoring, and disaster recovery.
+
+## Table of Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Operations](#operations)
+- [Monitoring & Alerting](#monitoring--alerting)
+- [Backup & Disaster Recovery](#backup--disaster-recovery)
+- [High Availability](#high-availability)
+- [Admin Panel](#admin-panel)
+- [Customer Features](#customer-features)
+- [API Reference](#api-reference)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
 
 ## Features
 
-- **Automated Provisioning**: Customers sign up and receive a fully configured online store within minutes
-- **Multi-Platform Support**: WooCommerce (WordPress) and Magento 2 with Varnish caching
-- **Self-Service Dashboard**: Customers can view store status, credentials, and manage their stores
-- **Admin Panel**: Full-featured admin interface for system monitoring and customer management
-  - **Admin User Management**: Super admins can create, edit, and manage other admin users with role-based access control
-  - **Live Provisioning Logs**: Real-time persistent logs showing detailed provisioning progress on customer pages
-  - **CMS for Marketing Pages**: Full WYSIWYG editor for homepage, pricing, features, about, and contact pages with draft/publish workflow and version history
-  - **Stripe Pricing Sync**: Two-way sync between local pricing plans and Stripe with choice dialog for creating new prices or updating existing ones
-- **Background Job Processing**: Redis-backed queue system for reliable provisioning
-- **SSL/TLS Support**: Automatic certificate management with Let's Encrypt
-- **Resource Isolation**: Each customer gets isolated Docker containers with configurable resource limits
-- **Automated Backups**: Daily encrypted backups to remote server using restic with 30-day retention
-- **Customer Self-Service Backups**: Customers can create manual backups and restore from any snapshot with options for database-only, files-only, or full restore
-- **Production Security Hardening**: Comprehensive security features for production deployment
+### Core Platform
+- **Automated Provisioning**: Customers sign up via Stripe checkout and receive a fully configured online store within minutes
+- **Multi-Platform Support**: WooCommerce (WordPress + MySQL + Redis) and Magento 2 (with Elasticsearch + Varnish caching)
+- **Multi-Server Provisioning**: Scale horizontally by adding worker servers with automatic load balancing
+- **Resource Isolation**: Each customer gets isolated Docker containers with configurable CPU, memory, disk, and bandwidth limits
 
-## Security Features
+### Customer Self-Service
+- **Dashboard**: View store credentials, health status, resource usage, and billing information
+- **Staging Environments**: Create up to 3 isolated staging copies per customer for testing changes
+- **DNS Management**: Cloudflare OAuth integration for managing DNS records directly from the dashboard
+- **Two-Factor Authentication**: TOTP-based 2FA with backup recovery codes
+- **Backup Management**: View and request restores of automated backups
 
-ShopHosting.io includes enterprise-grade security features:
+### Administration
+- **Admin Panel**: Full-featured interface for customer management, provisioning monitoring, and system health
+- **Role-Based Access**: Super admin, admin, and support roles with appropriate permissions
+- **Live Provisioning Logs**: Real-time progress updates during customer provisioning
+- **Resource Enforcement**: Automatic suspension when customers exceed disk/bandwidth limits
 
-### Authentication & Session Security
-- **Secure Password Storage**: PBKDF2-SHA256 hashing via Werkzeug
-- **Session Protection**: HTTPOnly, Secure (HTTPS), SameSite=Lax cookies
-- **Idle Timeout**: 30-minute session timeout for both customers and admins
-- **CSRF Protection**: Flask-WTF CSRF tokens on all forms
+### Infrastructure
+- **Automated Backups**: Daily encrypted backups to remote server using restic with configurable retention
+- **SSL/TLS**: Automatic certificate management with Let's Encrypt
+- **Database HA**: MySQL source-replica replication with read/write splitting
+- **Redis HA**: Redis Sentinel with automatic failover
+- **Load Balancing**: Multiple webapp instances with nginx upstream
+- **Secrets Management**: HashiCorp Vault integration with environment variable fallback
 
-### Rate Limiting
-Rate limits enforced via Flask-Limiter with Redis backend:
-| Endpoint | Limit |
-|----------|-------|
-| Customer Login | 5/min, 20/hr |
-| Admin Login | 3/min, 10/hr |
-| Signup | 10/hr |
-| Contact/Consultation | 5/hr |
-| Backup Operations | 3/hr |
+### Monitoring & Observability
+- **Metrics**: Prometheus metrics collection with 30-day retention
+- **Dashboards**: Grafana visualization with pre-built dashboards
+- **Logging**: Centralized log aggregation with Grafana Loki
+- **Alerting**: AlertManager with email and PagerDuty notifications
+- **Status Page**: Public status page with incident management
 
-### Security Headers (Flask-Talisman)
-- Content-Security-Policy (CSP)
-- Strict-Transport-Security (HSTS) - 1 year
-- X-Content-Type-Options: nosniff
-- X-Frame-Options: DENY
-- Referrer-Policy: strict-origin-when-cross-origin
+### Billing
+- **Stripe Integration**: Checkout, subscriptions, invoicing, and customer portal
+- **Webhook Handling**: Automatic provisioning on successful payment
+- **Plan Management**: Multiple pricing tiers with resource limits
 
-### Input Validation
-- **File Uploads**: Extension whitelist + magic number validation
-- **API Inputs**: Strict format validation (e.g., backup snapshot IDs)
-- **Domain Validation**: Regex pattern matching
-- **Request Size Limits**: 50MB max to prevent DoS
+## Architecture
 
-### Audit Logging
-Security events logged to `/opt/shophosting/logs/security.log`:
-- Login attempts (success/failure)
-- Session timeouts
-- Backup/restore operations
-- Rate limit violations
-
-### Configuration Security
-- **Fail-Fast**: App refuses to start without proper `SECRET_KEY` and `DB_PASSWORD`
-- **Environment Variables**: All secrets loaded from `.env`, never hardcoded
-- **File Permissions**: Restrictive permissions on sensitive files
-
-See [SECURITY.md](SECURITY.md) for complete security documentation.
-
-## CI/CD Pipeline
-
-The project includes a GitHub Actions CI/CD pipeline (`.github/workflows/ci.yml`) that runs on every push and pull request:
-
-### Pipeline Stages
-
-1. **Lint**: Code quality checks
-   - `flake8` for Python syntax and style
-   - `black` for code formatting (advisory)
-   - `isort` for import ordering (advisory)
-   - `bandit` for security analysis
-
-2. **Test**: Automated testing
-   - `pytest` with Flask test client
-   - Tests for health endpoints, authentication, security headers
-   - Runs against MySQL and Redis services
-
-3. **Security**: Dependency scanning
-   - `pip-audit` for known vulnerabilities
-   - Secret pattern detection
-
-### Running Tests Locally
-
-```bash
-cd /opt/shophosting/webapp
-source venv/bin/activate
-pytest tests/ -v
 ```
+                         ┌─────────────────────────┐
+                         │    Load Balancer        │
+                         │    (Nginx Upstream)     │
+                         └───────────┬─────────────┘
+                                     │
+              ┌──────────────────────┼──────────────────────┐
+              │                      │                      │
+       ┌──────▼──────┐        ┌──────▼──────┐        ┌──────▼──────┐
+       │   Gunicorn  │        │   Gunicorn  │        │   Customer  │
+       │   :5000     │        │   :5001     │        │   Stores    │
+       │  (Flask)    │        │  (Flask)    │        │ :8001-8100  │
+       └──────┬──────┘        └──────┬──────┘        └─────────────┘
+              │                      │
+              └──────────┬───────────┘
+                         │
+    ┌────────────────────┼────────────────────┐
+    │                    │                    │
+┌───▼────┐         ┌─────▼─────┐        ┌─────▼─────┐
+│ MySQL  │◄───────►│   Redis   │        │   Vault   │
+│ Master │         │  Sentinel │        │ (Secrets) │
+└───┬────┘         └─────┬─────┘        └───────────┘
+    │                    │
+┌───▼────┐         ┌─────▼─────┐
+│ MySQL  │         │   Redis   │
+│Replica │         │   Slave   │
+└────────┘         └───────────┘
+
+Background Workers:
+┌────────────────────────────────────────────────────────┐
+│                    Redis Queue (RQ)                    │
+│  provisioning │ staging │ backup │ resource │ monitor │
+└───────┬───────────┬─────────┬────────┬─────────┬──────┘
+        │           │         │        │         │
+   ┌────▼────┐ ┌────▼────┐ ┌──▼──┐ ┌───▼───┐ ┌───▼───┐
+   │Provision│ │ Staging │ │Back │ │Resour │ │Monitor│
+   │ Worker  │ │ Worker  │ │ up  │ │  ce   │ │  ing  │
+   └─────────┘ └─────────┘ └─────┘ └───────┘ └───────┘
+
+Monitoring Stack:
+┌─────────────────────────────────────────────────────┐
+│  Prometheus  │  Grafana  │  Loki  │  AlertManager   │
+│    :9090     │   :3000   │ :3100  │     :9093       │
+└─────────────────────────────────────────────────────┘
+```
+
+### Port Allocation
+
+| Service | Port Range | Description |
+|---------|------------|-------------|
+| Production Web | 8001-8100 | Customer store frontends |
+| Production Admin | 9001-9100 | phpMyAdmin interfaces |
+| Staging Web | 10001-10100 | Staging store frontends |
+| Staging Admin | 11001-11100 | Staging phpMyAdmin |
 
 ## Requirements
 
+### System Requirements
 - Ubuntu 22.04 LTS (recommended)
+- 4+ CPU cores
+- 8+ GB RAM
+- 100+ GB SSD storage
 - Python 3.10+
-- Docker Engine + Docker Compose
+
+### Software Dependencies
+- Docker Engine + Docker Compose v2
 - MySQL 8.0
-- Redis Server
+- Redis 7
 - Nginx
-- Certbot (for SSL)
+- Certbot (Let's Encrypt)
+- restic (backups)
+
+### Optional Components
+- HashiCorp Vault (secrets management)
+- Grafana + Prometheus + Loki (monitoring)
+- fail2ban (intrusion prevention)
 
 ## Installation
 
@@ -111,17 +145,22 @@ pytest tests/ -v
 
 ```bash
 sudo apt update
-sudo apt install -y docker.io docker-compose mysql-server redis-server nginx certbot python3-certbot-nginx python3.10 python3.10-venv
+sudo apt install -y \
+    docker.io docker-compose-v2 \
+    mysql-server redis-server nginx \
+    certbot python3-certbot-nginx \
+    python3.10 python3.10-venv python3-pip \
+    restic jq curl
 ```
 
 ### 2. Create System User and Directories
 
 ```bash
 # Create system user
-sudo useradd -r -s /bin/bash shophosting
+sudo useradd -r -m -s /bin/bash shophosting
 
 # Create directories
-sudo mkdir -p /opt/shophosting /var/customers
+sudo mkdir -p /opt/shophosting /var/customers /opt/shophosting/logs
 sudo chown -R shophosting:shophosting /opt/shophosting /var/customers
 
 # Add user to docker group
@@ -132,14 +171,28 @@ sudo usermod -aG docker shophosting
 
 ```bash
 cd /opt
-sudo git clone https://github.com/NJHarrell/shophosting.git
+sudo git clone https://github.com/NathanJHarrell/shophosting.git
 sudo chown -R shophosting:shophosting /opt/shophosting
 ```
 
 ### 4. Set Up the Database
 
 ```bash
-sudo mysql -u root -p < /opt/shophosting/schema.sql
+# Create database and user
+sudo mysql -u root << 'EOF'
+CREATE DATABASE shophosting_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'shophosting_app'@'localhost' IDENTIFIED BY 'your-secure-password';
+GRANT ALL PRIVILEGES ON shophosting_db.* TO 'shophosting_app'@'localhost';
+FLUSH PRIVILEGES;
+EOF
+
+# Initialize schema
+sudo mysql -u root shophosting_db < /opt/shophosting/schema.sql
+
+# Run migrations
+cd /opt/shophosting/webapp
+source venv/bin/activate
+python migrate.py
 ```
 
 ### 5. Configure Environment
@@ -147,14 +200,11 @@ sudo mysql -u root -p < /opt/shophosting/schema.sql
 ```bash
 cd /opt/shophosting
 cp .env.example .env
-nano .env  # Edit with your actual values
+chmod 600 .env
+nano .env  # Edit with your values
 ```
 
-Key variables to configure:
-- `SECRET_KEY`: Generate with `python3 -c "import secrets; print(secrets.token_hex(32))"`
-- `DB_PASSWORD`: Your MySQL password
-- `BASE_DOMAIN`: Your domain name
-- `SMTP_*`: Email settings (optional)
+See [Configuration](#configuration) for all environment variables.
 
 ### 6. Set Up Python Virtual Environments
 
@@ -181,83 +231,219 @@ cd /opt/shophosting/docker/wordpress
 docker build -t shophosting/wordpress:latest .
 ```
 
-### 8. Configure Sudoers for Webapp
+### 8. Configure Sudoers
 
-The webapp user needs passwordless sudo access for certain operations (nginx reload, customer cleanup):
+The webapp user needs passwordless sudo for nginx and certbot operations:
 
 ```bash
-# Add sudoers entries for the webapp user
-echo 'agileweb ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t, /usr/bin/systemctl reload nginx, /usr/bin/certbot' | sudo tee /etc/sudoers.d/shophosting-nginx
-echo 'agileweb ALL=(ALL) NOPASSWD: /usr/bin/rm -rf /var/customers/customer-*' | sudo tee /etc/sudoers.d/shophosting-cleanup
-sudo chmod 440 /etc/sudoers.d/shophosting-nginx /etc/sudoers.d/shophosting-cleanup
-sudo visudo -c  # Validate sudoers configuration
+cat << 'EOF' | sudo tee /etc/sudoers.d/shophosting
+shophosting ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
+shophosting ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nginx
+shophosting ALL=(ALL) NOPASSWD: /usr/bin/certbot
+shophosting ALL=(ALL) NOPASSWD: /usr/bin/rm -rf /var/customers/customer-*
+shophosting ALL=(ALL) NOPASSWD: /usr/bin/docker *
+EOF
+sudo chmod 440 /etc/sudoers.d/shophosting
 ```
 
 ### 9. Install Systemd Services
 
 ```bash
+# Core services
 sudo cp /opt/shophosting/shophosting-webapp.service /etc/systemd/system/
 sudo cp /opt/shophosting/provisioning-worker.service /etc/systemd/system/
+sudo cp /opt/shophosting/provisioning/resource-worker.service /etc/systemd/system/
+sudo cp /opt/shophosting/provisioning/monitoring-worker.service /etc/systemd/system/
+
+# Backup services
+sudo cp /opt/shophosting/shophosting-backup.service /etc/systemd/system/
+sudo cp /opt/shophosting/shophosting-backup.timer /etc/systemd/system/
+
+# Enable and start
 sudo systemctl daemon-reload
 sudo systemctl enable shophosting-webapp provisioning-worker
+sudo systemctl enable shophosting-backup.timer
 sudo systemctl start shophosting-webapp provisioning-worker
+sudo systemctl start shophosting-backup.timer
 ```
 
 ### 10. Configure Nginx
 
-Create `/etc/nginx/sites-available/shophosting`:
+```bash
+# Copy configuration
+sudo cp /opt/shophosting/configs/nginx/shophosting-upstream.conf /etc/nginx/conf.d/
 
-```nginx
+# Create site configuration
+sudo tee /etc/nginx/sites-available/shophosting << 'EOF'
+upstream shophosting_app {
+    least_conn;
+    server 127.0.0.1:5000;
+    keepalive 32;
+}
+
 server {
     server_name yourdomain.com www.yourdomain.com;
 
     location / {
-        proxy_pass http://127.0.0.1:5000;
+        proxy_pass http://shophosting_app;
+        proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
     }
 
     listen 80;
 }
-```
+EOF
 
-Enable the site and get SSL:
-
-```bash
+# Enable and get SSL
 sudo ln -s /etc/nginx/sites-available/shophosting /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
+sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
 ```
 
-## Usage
-
-### Managing Services
+### 11. Create First Admin User
 
 ```bash
-# Start services
+cd /opt/shophosting
+source webapp/venv/bin/activate
+python scripts/create_admin.py admin@example.com "SecurePassword123!" "Admin Name" super_admin
+```
+
+## Configuration
+
+### Environment Variables (.env)
+
+#### Required
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `SECRET_KEY` | Flask secret key (32+ chars) | `openssl rand -hex 32` |
+| `DB_PASSWORD` | MySQL password | `your-db-password` |
+| `BASE_DOMAIN` | Your domain name | `shophosting.io` |
+
+#### Database
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_HOST` | `localhost` | MySQL host |
+| `DB_USER` | `shophosting_app` | MySQL user |
+| `DB_NAME` | `shophosting_db` | Database name |
+| `DB_POOL_SIZE` | `5` | Connection pool size |
+| `DB_REPLICA_HOST` | - | Read replica host (optional) |
+| `DB_REPLICA_USER` | - | Replica user (optional) |
+| `DB_REPLICA_PASSWORD` | - | Replica password (optional) |
+
+#### Redis
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_URL` | `redis://localhost:6379/1` | Redis connection URL |
+| `REDIS_SENTINEL_HOSTS` | - | Sentinel hosts (e.g., `localhost:26379,localhost:26380`) |
+| `REDIS_SENTINEL_MASTER` | `mymaster` | Sentinel master name |
+| `REDIS_PASSWORD` | - | Redis password |
+
+#### Vault (Optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VAULT_ADDR` | `http://127.0.0.1:8200` | Vault server address |
+| `VAULT_ROLE_ID` | - | AppRole role ID |
+| `VAULT_SECRET_ID` | - | AppRole secret ID |
+
+#### Stripe
+
+| Variable | Description |
+|----------|-------------|
+| `STRIPE_SECRET_KEY` | Stripe API secret key |
+| `STRIPE_PUBLISHABLE_KEY` | Stripe publishable key |
+| `STRIPE_WEBHOOK_SECRET` | Webhook signing secret |
+
+#### Cloudflare (Optional)
+
+| Variable | Description |
+|----------|-------------|
+| `CLOUDFLARE_CLIENT_ID` | OAuth client ID |
+| `CLOUDFLARE_CLIENT_SECRET` | OAuth client secret |
+| `CLOUDFLARE_REDIRECT_URI` | OAuth callback URL |
+
+#### Email
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EMAILS_ENABLED` | `false` | Enable email sending |
+| `SMTP_HOST` | - | SMTP server |
+| `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_USERNAME` | - | SMTP username |
+| `SMTP_PASSWORD` | - | SMTP password |
+| `FROM_EMAIL` | - | Sender email address |
+
+#### Customers
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CUSTOMERS_BASE_PATH` | `/var/customers` | Customer data directory |
+| `PORT_RANGE_START` | `8001` | First customer port |
+| `PORT_RANGE_END` | `8100` | Last customer port |
+| `DEFAULT_MEMORY_LIMIT` | `1g` | Default container memory |
+| `DEFAULT_CPU_LIMIT` | `1.0` | Default container CPU |
+
+#### Backup
+
+| Variable | Description |
+|----------|-------------|
+| `RESTIC_REPOSITORY` | Backup destination (`sftp:user@host:/path`) |
+| `RESTIC_PASSWORD_FILE` | Path to restic password file |
+
+## Operations
+
+### Service Management
+
+```bash
+# Start all services
 sudo systemctl start shophosting-webapp provisioning-worker
 
-# Stop services
+# Stop all services
 sudo systemctl stop shophosting-webapp provisioning-worker
 
-# View logs
-tail -f /opt/shophosting/logs/webapp.log
-tail -f /opt/shophosting/logs/provisioning_worker.log
+# Restart with zero downtime (if load balanced)
+/opt/shophosting/scripts/rolling-restart.sh
 
-# Check service status
+# Check status
 sudo systemctl status shophosting-webapp
 sudo systemctl status provisioning-worker
 ```
 
-### Checking Redis Queue
+### Viewing Logs
 
 ```bash
-redis-cli
-> KEYS rq:*
-> LLEN rq:queue:provisioning
+# Webapp logs
+tail -f /opt/shophosting/logs/webapp.log
+
+# Provisioning worker logs
+tail -f /opt/shophosting/logs/provisioning_worker.log
+
+# Systemd journal
+journalctl -u shophosting-webapp -f
+journalctl -u provisioning-worker -f
+```
+
+### Database Migrations
+
+```bash
+cd /opt/shophosting/webapp
+source venv/bin/activate
+
+# Check migration status
+python migrate.py --status
+
+# Run pending migrations
+python migrate.py
+
+# Dry run (show what would run)
+python migrate.py --dry-run
 ```
 
 ### Customer Container Management
@@ -269,531 +455,453 @@ docker ps --filter "name=customer-"
 # View container logs
 docker logs customer-{id}-web
 
-# Stop a customer's containers
+# Restart a customer's stack
 cd /var/customers/customer-{id}
+docker compose restart
+
+# Stop a customer's containers
 docker compose down
+
+# Start a customer's containers
+docker compose up -d
 ```
 
-## Admin Panel
-
-ShopHosting.io includes a comprehensive admin panel for system monitoring and customer management.
-
-### Setup
-
-1. **Run the migrations:**
-   ```bash
-   mysql -u root -p shophosting_db < /opt/shophosting/migrations/002_add_admin_users.sql
-   mysql -u root -p shophosting_db < /opt/shophosting/migrations/005_add_admin_features.sql
-   ```
-
-2. **Create your first admin user:**
-   ```bash
-   cd /opt/shophosting
-   source webapp/venv/bin/activate
-   python3 scripts/create_admin.py admin@example.com YourSecurePassword "Admin Name" super_admin
-   ```
-
-3. **Access the admin panel:**
-   Navigate to `https://yourdomain.com/admin/login`
-
-### Features
-
-- **Dashboard**: Overview of customer stats, port usage, queue status, and quick action buttons
-- **Customer Management**: Create, edit, delete customers with automatic provisioning
-  - Quick "New Customer" button on all customer listing pages
-  - Detailed customer view with store credentials and activity logs
-  - Retry provisioning for failed customers with automatic cleanup
-- **Provisioning Monitoring**: View queue status, job history with real-time status updates
-  - Job status tracking: queued → started → finished/failed
-  - Expandable, prettified error logs (auto-formats JSON and stack traces)
-  - One-click retry for failed provisioning jobs
-  - **Live Provisioning Logs**: Real-time progress updates on customer detail page when provisioning is in progress (auto-refreshes every 5 seconds)
-- **Admin User Management**: Super admins can manage admin users
-  - View all admin users (all admin roles)
-  - Create new admin users with `admin` or `support` roles
-  - Edit existing admin details
-  - Reset passwords with automatic email notification
-  - Toggle admin active status
-  - Delete admin users
-- **System Health**: Service status, disk usage, backup status, port allocation
-- **Billing Overview**: MRR, subscription stats, recent invoices
-- **Log Viewer**: View webapp and worker logs directly from the admin panel
-- **Consultation Appointments**: Manage prospect consultations and sales pipeline
-- **Pricing Plans Management**: Edit pricing plans directly from the admin panel
-
-### Quick Actions
-
-The dashboard includes quick action buttons for:
-- Restart webapp/worker services
-- Run manual backup
-- Clear failed provisioning jobs
-- View logs
-- External links to Portainer and Stripe Dashboard
-
-### Admin Roles
-
-- `super_admin`: Full access to all features including admin user management and CMS
-- `admin`: Standard admin access (can view admin users, cannot modify)
-- `support`: Limited access for support staff (can view admin users, cannot modify)
-
-### Password Management
-
-- Admins can change their own password via the "Change Password" option in the sidebar
-- Super admins can reset other admin users' passwords via the Admin Users page
-- When a password is reset by a super admin:
-  - A temporary 16-character secure password is generated
-  - An email is sent to the admin user with the temporary password
-  - The admin is forced to change their password on next login
-  - The temporary password must be changed before accessing any other admin pages
-
-### Consultation Appointments
-
-Manage prospect consultations from the scheduler form on the marketing site.
-
-**Access:** Navigate to `https://yourdomain.com/admin/appointments` or click "Appointments" in the admin sidebar.
-
-**Features:**
-- **Dashboard Stats**: View total appointments, today's count, this week, pending, and confirmed
-- **Filtering**: Search by name/email/phone, filter by status and date range
-- **Status Workflow**: Track appointments through: pending → confirmed → completed/cancelled/no_show
-- **Assignment**: Assign consultations to specific admin users
-- **Notes**: Add internal notes to each appointment
-- **Quick Actions**: Email or call prospects directly from the detail view
-
-**Setup:**
-```bash
-mysql -u root -p shophosting_db < /opt/shophosting/migrations/007_add_consultations_table.sql
-```
-
-### Pricing Plans Management
-
-Edit WooCommerce and Magento pricing plans directly from the admin panel.
-
-**Access:** Navigate to `https://yourdomain.com/admin/pricing-plans` or click "Pricing Plans" in the admin sidebar under "Billing".
-
-**Features:**
-- **View Plans**: See all plans organized by platform (WooCommerce, Magento)
-- **Edit Plan Details**: Name, monthly price, store limit, display order
-- **Resource Allocation**: Configure memory (1-16GB) and CPU limits (0.5-8 cores)
-- **Feature Toggles**: Enable/disable plan features:
-  - Daily Backups, Email Support, Premium Plugins
-  - 24/7 Support, Redis Cache, Staging Environment
-  - SLA Uptime, Advanced Security, White Label
-- **Stripe Integration**: View linked Stripe product/price IDs (read-only)
-- **Active/Inactive Status**: Toggle plan visibility
-
-**Note:** Price changes do not affect existing subscriptions until renewal. Use the Stripe sync API to update Stripe prices after changes.
-
-## CMS - Site Pages Management
-
-The admin panel includes a full Content Management System for managing customer-facing marketing pages.
-
-### Access
-
-Navigate to `https://yourdomain.com/admin/pages` or click "Site Pages" in the admin sidebar under "Content".
-
-### Features
-
-- **Structured Markdown Editor**: Single full-page editor with Markdown + preview for all sections
-- **Section Preservation**: Section headers keep existing page layouts intact
-- **Page Types**: Homepage, Pricing, Features, About, Contact
-- **Draft/Publish Workflow**: Save as draft or publish immediately
-- **Version History**: Every change is tracked with ability to rollback
-- **Preview Mode**: Preview pages in modal before publishing
-
-### Editor Format
-
-The editor uses section headers to map Markdown back into the structured JSON used by the layout renderers.
-
-```
-## section: hero.headline
-Launch on managed hosting.
-
-## section: hero.subheadline
-Scale with zero ops overhead.
-
-## section: stats (json)
-```json
-{
-  "stores_count": "120+",
-  "uptime": "99.99%",
-  "hours_saved": "9000+"
-}
-```
-
-Notes:
-- Use `## section: <section>.<field>` for structured text fields.
-- Use `## section: <section> (json)` plus a fenced JSON block for structured objects.
-- Keep all sections you want to preserve in the page layout.
-
-### Managing Pages
-
-1. Click "Edit" on any page to open the editor
-2. Update the section Markdown and keep the section headers intact
-3. Use the preview button to validate changes before saving
-4. Add a change summary (optional) to track what changed
-5. Save as Draft or Publish
-6. Use "Version History" to see all changes and rollback if needed
-
-### Rollback
-
-To rollback to a previous version:
-1. Go to the page's Version History
-2. Find the version you want to restore
-3. Click "Rollback" and confirm
-
-## Stripe Pricing Sync
-
-The pricing page integrates with Stripe for two-way pricing synchronization.
-
-### Sync Options
-
-When editing pricing on the pricing page:
-- **Create New Prices**: Archives old Stripe prices and creates new ones (use when you want to change pricing structure)
-- **Update Existing**: Updates the current Stripe price objects (use for simple price changes)
-
-### API Endpoints
-
-- `GET /admin/api/pricing/sync-options` - Get sync status for all pricing plans
-- `POST /admin/api/pricing/sync/<plan_id>` - Sync a plan to Stripe
-
-## Infrastructure Improvements
-
-Recent operational enhancements to improve reliability and isolation.
-
-### Per-Customer Automated Backups
-
-Every customer now gets automatic scheduled backups to the remote restic repository.
-
-**How it works:**
-- Step 10 of provisioning sets up a cron job for each customer
-- Backups run every 6 hours (configurable)
-- 14-day retention policy for customer backups
-- Backups include database and all customer files
-
-**Configuration:**
-```bash
-# Backup script location
-/opt/shophosting/scripts/customer-backup.sh
-
-# Backup logs
-/var/log/shophosting-customer-backup.log
-
-# Cron schedule (every 6 hours)
-0 */6 * * * /opt/shophosting/scripts/customer-backup.sh {customer_id}
-```
-
-**Manual backup (customers can do this from their dashboard):**
-```bash
-/opt/shophosting/scripts/customer-backup.sh 6  # For customer 6
-```
-
-### Idempotent Provisioning
-
-The provisioning system now handles retries correctly without crashing on existing resources.
-
-**What was fixed:**
-- Directory creation checks for existing directories before creating
-- Existing containers are cleaned up before reprovisioning
-- Retry button in admin panel now works correctly for failed jobs
-- No more "directory already exists" errors on retry
-
-**How it works:**
-```python
-# In create_customer_directory()
-if customer_path.exists():
-    logger.info(f"Directory {customer_path} already exists, cleaning up first")
-    # Stop existing containers first
-    subprocess.run(['docker', 'compose', 'down', '-v', '--remove-orphans'], ...)
-    # Then proceed with creation (exist_ok=True)
-    customer_path.mkdir(parents=True, exist_ok=True)
-```
-
-### Docker Resource Limits
-
-All customer containers now have memory and CPU limits enforced via Docker's deploy.resources.
-
-**Resource limits per service (WooCommerce):**
-| Service | Memory | CPU |
-|---------|--------|-----|
-| db | 512m | 0.5 |
-| redis | 256m | 0.25 |
-| wordpress | From pricing plan | From pricing plan |
-| phpmyadmin | 256m | 0.25 |
-
-**Resource limits per service (Magento):**
-| Service | Memory | CPU |
-|---------|--------|-----|
-| varnish | 512m | 0.5 |
-| web | From pricing plan | From pricing plan |
-| db | 1g | 1.0 |
-| elasticsearch | 1g | 0.5 |
-| redis | 256m | 0.25 |
-
-**Configuration:**
-Limits are passed from the `pricing_plans` table:
-```python
-config = {
-    'memory_limit': job_data.get('memory_limit', '1g'),
-    'cpu_limit': job_data.get('cpu_limit', '1.0')
-}
-```
-
-## Backup System
-
-ShopHosting.io includes an automated backup system using [restic](https://restic.net/) that backs up all customer data to a remote server daily, plus customer self-service backup management.
-
-### What Gets Backed Up
-
-- `/var/customers/` - All customer sites (MySQL data, WordPress/Magento files, Redis, configs)
-- `shophosting_db` - Master database (customer metadata, credentials, billing)
-- `/etc/nginx/sites-available/` - Customer reverse proxy configurations
-- `/etc/letsencrypt/` - SSL certificates
-- `/opt/shophosting/.env` - Application configuration
-
-### Setup
-
-1. **Install restic:**
-   ```bash
-   sudo apt install restic
-   ```
-
-2. **Set up SSH key authentication to backup server:**
-   ```bash
-   ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N "" -C "shophosting-backup"
-   # Copy public key to backup server's authorized_keys
-   ```
-
-3. **Create restic password file:**
-   ```bash
-   openssl rand -base64 32 > /root/.restic-password
-   chmod 600 /root/.restic-password
-   ```
-
-4. **Initialize restic repository:**
-   ```bash
-   restic -r sftp:user@backup-server:/path/to/backups --password-file /root/.restic-password init
-   ```
-
-5. **Install systemd timer:**
-   ```bash
-   sudo cp /opt/shophosting/shophosting-backup.service /etc/systemd/system/
-   sudo cp /opt/shophosting/shophosting-backup.timer /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now shophosting-backup.timer
-   ```
-
-### Managing Backups
+### Queue Management
 
 ```bash
+# Check queue status
+redis-cli LLEN rq:queue:provisioning
+
+# View failed jobs
+redis-cli LRANGE rq:failed 0 -1
+
+# Clear failed jobs (from admin panel or)
+redis-cli DEL rq:failed
+```
+
+## Monitoring & Alerting
+
+### Deploy Monitoring Stack
+
+```bash
+cd /opt/shophosting/monitoring
+cp .env.example .env
+nano .env  # Set GRAFANA_ADMIN_PASSWORD
+
+docker compose up -d
+```
+
+### Access Dashboards
+
+| Service | URL | Default Credentials |
+|---------|-----|---------------------|
+| Grafana | `https://yourdomain.com/grafana` | admin / (from .env) |
+| Prometheus | `http://localhost:9090` | - |
+| AlertManager | `http://localhost:9093` | - |
+
+### Configure Alerting
+
+Edit `monitoring/.env`:
+
+```bash
+# Email alerts
+SMTP_HOST=smtp.gmail.com:587
+SMTP_FROM=alerts@yourdomain.com
+SMTP_USERNAME=your-email
+SMTP_PASSWORD=your-app-password
+ALERT_EMAIL=ops@yourdomain.com
+
+# PagerDuty alerts
+PAGERDUTY_ROUTING_KEY=your-routing-key
+```
+
+### Alert Rules
+
+Pre-configured alerts in `monitoring/prometheus/alerts.yml`:
+
+| Alert | Severity | Description |
+|-------|----------|-------------|
+| CustomerContainerDown | critical | Container down > 5 min |
+| CustomerHighMemory | warning | Memory > 90% for 10 min |
+| CustomerHighDiskUsage | warning | Disk quota > 90% |
+| WebappDown | critical | Webapp unreachable > 2 min |
+| MySQLDown | critical | Database unreachable |
+| MySQLReplicationLag | warning | Replica > 60s behind |
+| BackupFailed | critical | No backup in 24 hours |
+
+### Centralized Logging
+
+Logs are aggregated in Loki and queryable via Grafana:
+
+```logql
+# All webapp errors
+{job="shophosting-webapp"} |= "ERROR"
+
+# Customer provisioning logs
+{job="shophosting-workers"} |~ "customer-\\d+"
+
+# Nginx 5xx errors
+{job="nginx"} | json | status >= 500
+```
+
+## Backup & Disaster Recovery
+
+### Automated Backups
+
+Backups run daily via systemd timer and include:
+- All customer data (`/var/customers/`)
+- Master database dump
+- SSL certificates
+- Application configuration
+
+```bash
+# Check backup timer status
+systemctl status shophosting-backup.timer
+
 # Run manual backup
 /opt/shophosting/scripts/backup.sh
 
-# List available snapshots
-restic -r sftp:user@host:/backups snapshots
-
-# Check backup timer status
-systemctl status shophosting-backup.timer
+# List snapshots
+/opt/shophosting/scripts/restore.sh list
 
 # View backup logs
 journalctl -u shophosting-backup.service
 ```
 
-### Customer Self-Service Backups
-
-Customers can manage their own backups through the `/backup` page.
-
-**Features:**
-- **Create Backup**: Customers can trigger manual backups of their store
-- **View History**: See all available snapshots with dates
-- **Restore Options**: Restore from any snapshot with three options:
-  - **Database Only**: Restore just the database (products, orders, settings)
-  - **Files Only**: Restore just the store files (uploads, themes, plugins)
-  - **Database + Files**: Full restore of everything
-
-**Navigation:**
-- Customers access backups via "Backups" link in their navigation
-- Quick link on dashboard: "Manage Backups"
-
-**How Restore Works:**
-1. Customer selects a snapshot from the list
-2. Chooses restore type (db/files/all)
-3. Confirms the action
-4. Store containers are stopped temporarily
-5. Selected data is restored from snapshot
-6. Containers restart automatically
-
-**Retention:**
-- Customer backups are retained for 14 days
-- Daily system backups are retained for 30 days
-
-### Restore Commands (Admin)
+### Restore Procedures
 
 ```bash
-# Restore a specific customer
-/opt/shophosting/scripts/customer-restore.sh <customer_id> <snapshot_id> db|files|all
+# Restore specific customer
+/opt/shophosting/scripts/restore.sh restore-customer 12 latest
 
-# Restore a specific file or directory
-restic -r sftp:user@host:/backups restore <snapshot_id> --target / --path /var/customers/customer-X
+# Restore database
+/opt/shophosting/scripts/restore.sh restore-db shophosting_db latest
 
-# Full disaster recovery (use with caution)
+# Restore specific file/directory
+/opt/shophosting/scripts/restore.sh restore-file /var/customers/customer-12 latest
+
+# Full disaster recovery
 /opt/shophosting/scripts/restore.sh restore-all latest
 ```
 
-### Configuration
+### Disaster Recovery Testing
 
-Edit `/opt/shophosting/scripts/backup.sh` to customize:
-- `RESTIC_REPOSITORY` - Backup destination (sftp://user@host:/path)
-- `RETENTION_DAYS` - Number of daily snapshots to keep (default: 30)
+Run monthly DR verification:
 
-**Important:** Keep `/root/.restic-password` safe - without it, backups cannot be restored.
-
-### Application Code Backup
-
-In addition to customer data backups, a separate backup system protects the application code in `/opt/shophosting`.
-
-**What Gets Backed Up:**
-- Application source code
-- Configuration templates
-- Migration scripts
-- Static assets
-
-**Schedule:** Daily at 2:30 AM (with up to 5 minutes random delay)
-
-**Setup:**
 ```bash
-# Install systemd units
-sudo cp /opt/shophosting/shophosting-dir-backup.service /etc/systemd/system/
-sudo cp /opt/shophosting/shophosting-dir-backup.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now shophosting-dir-backup.timer
+/opt/shophosting/scripts/dr-test.sh
 ```
 
-**Management:**
+This validates:
+- Repository integrity
+- Snapshot availability
+- Restore functionality
+- Database recoverability
+
+See `docs/runbooks/disaster-recovery.md` for detailed procedures.
+
+## High Availability
+
+### MySQL Replication
+
+Set up source-replica replication for read scaling and failover:
+
 ```bash
-# Run manual backup
-/opt/shophosting/scripts/shophosting-dir-backup.sh
+# On primary server
+sudo /opt/shophosting/scripts/setup-mysql-replication.sh primary
 
-# List application snapshots
-restic -r sftp:user@host:/backups snapshots --tag "shophosting-dir"
-
-# View backup logs
-cat /var/log/shophosting-dir-backup.log
+# On replica server
+sudo /opt/shophosting/scripts/setup-mysql-replication.sh replica primary-host repl-password
 ```
 
-**Retention:** 30 daily snapshots (configurable in `scripts/restic-backup-config.sh`)
+Configure the app to use the replica:
 
-## Architecture
-
-```
-                    ┌─────────────────┐
-                    │  User Browser   │
-                    └────────┬────────┘
-                             │
-                    ┌────────▼────────┐
-                    │  Nginx (:80/443)│
-                    └────────┬────────┘
-                             │
-         ┌───────────────────┼───────────────────┐
-         │                   │                   │
-         ▼                   ▼                   ▼
-┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│ Flask App :5000 │ │ Customer Store  │ │ Customer Store  │
-│   (Gunicorn)    │ │   :8001-8010    │ │   :8001-8010    │
-└────────┬────────┘ └─────────────────┘ └─────────────────┘
-         │
-    ┌────┴────┐
-    │         │
-    ▼         ▼
-┌───────┐ ┌───────┐
-│ MySQL │ │ Redis │
-└───────┘ └───────┘
-              │
-              ▼
-      ┌───────────────┐
-      │   RQ Worker   │
-      │ (Provisioner) │
-      └───────────────┘
+```bash
+# In .env
+DB_REPLICA_HOST=replica-host
+DB_REPLICA_USER=shophosting_read
+DB_REPLICA_PASSWORD=replica-password
 ```
 
-## Directory Structure
+### Redis Sentinel
+
+Deploy Redis HA with automatic failover:
+
+```bash
+cd /opt/shophosting/redis
+./setup-sentinel.sh
+```
+
+Configure the app:
+
+```bash
+# In .env
+REDIS_SENTINEL_HOSTS=localhost:26379,localhost:26380,localhost:26381
+REDIS_SENTINEL_MASTER=mymaster
+REDIS_PASSWORD=your-redis-password
+```
+
+### Webapp Load Balancing
+
+Run multiple webapp instances:
+
+```bash
+# Set up 2 instances
+sudo /opt/shophosting/scripts/setup-load-balancing.sh 2
+
+# Rolling restart for zero downtime
+/opt/shophosting/scripts/rolling-restart.sh
+```
+
+### Secrets Management (Vault)
+
+Deploy HashiCorp Vault for secure secrets storage:
+
+```bash
+# Start Vault
+cd /opt/shophosting/vault
+docker compose up -d
+
+# Initialize and configure
+/opt/shophosting/scripts/vault-init.sh
+
+# Add secrets
+export VAULT_TOKEN=your-root-token
+vault kv put secret/shophosting/database password=db-password
+vault kv put secret/shophosting/stripe secret_key=sk_live_xxx
+```
+
+## Admin Panel
+
+Access at `https://yourdomain.com/admin/login`
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| Dashboard | Customer stats, queue status, system health |
+| Customers | Create, edit, suspend, delete customers |
+| Provisioning | Job monitoring, retry failed jobs, live logs |
+| Admin Users | Manage admin accounts (super_admin only) |
+| Staging | View all staging environments |
+| Status Page | Incident and maintenance management |
+| Billing | MRR, subscription overview, invoices |
+| Logs | View webapp and worker logs |
+
+### Admin Roles
+
+| Role | Permissions |
+|------|-------------|
+| `super_admin` | Full access including admin user management |
+| `admin` | Customer and system management |
+| `support` | View-only access for support staff |
+
+## Customer Features
+
+### Dashboard
+
+Customers can access their dashboard at `https://yourdomain.com/dashboard`:
+
+- View store URL and admin credentials
+- Monitor health status and resource usage
+- Manage staging environments
+- Configure DNS via Cloudflare
+- View billing and invoices
+- Enable two-factor authentication
+- Request backups and restores
+
+### Staging Environments
+
+Customers can create up to 3 staging sites:
+
+1. Click "Create Staging Environment"
+2. Enter a name for the staging site
+3. Wait for cloning to complete
+4. Test changes on staging
+5. Push files/database to production when ready
+
+Staging URLs: `cust{id}-staging-{n}.yourdomain.com`
+
+### DNS Management
+
+Customers with Cloudflare can:
+
+1. Connect their Cloudflare account via OAuth
+2. Review and approve automatic DNS configuration
+3. Add/edit/delete DNS records from dashboard
+4. MX and TXT records are preserved
+
+## API Reference
+
+### Health Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/health` | Application health check |
+| `GET /api/status` | Detailed status with DB/Redis |
+| `GET /health` | Simple liveness probe |
+| `GET /ready` | Readiness probe |
+
+### Metrics
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /metrics` | Prometheus metrics |
+| `GET /metrics/containers` | Container metrics |
+
+### Webhooks
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /webhook/stripe` | Stripe webhook receiver |
+
+## Troubleshooting
+
+### Common Issues
+
+#### Provisioning Fails
+
+```bash
+# Check worker logs
+tail -100 /opt/shophosting/logs/provisioning_worker.log
+
+# Check Docker
+docker ps -a --filter "name=customer-"
+
+# Verify ports
+ss -tlnp | grep 800
+
+# Retry from admin panel or clear failed job
+```
+
+#### Database Connection Issues
+
+```bash
+# Test connection
+mysql -u shophosting_app -p -h localhost shophosting_db
+
+# Check pool exhaustion
+grep "pool" /opt/shophosting/logs/webapp.log
+
+# Restart to reset connections
+sudo systemctl restart shophosting-webapp
+```
+
+#### Redis Connection Issues
+
+```bash
+# Test connection
+redis-cli ping
+
+# Check Sentinel (if using)
+redis-cli -p 26379 SENTINEL master mymaster
+
+# View Redis logs
+docker logs redis-master
+```
+
+#### SSL Certificate Issues
+
+```bash
+# Check certificate status
+sudo certbot certificates
+
+# Renew manually
+sudo certbot renew
+
+# Check nginx config
+sudo nginx -t
+```
+
+### Log Locations
+
+| Log | Location |
+|-----|----------|
+| Webapp | `/opt/shophosting/logs/webapp.log` |
+| Provisioning | `/opt/shophosting/logs/provisioning_worker.log` |
+| Resource Worker | `/opt/shophosting/logs/resource_worker.log` |
+| Nginx | `/var/log/nginx/` |
+| MySQL | `/var/log/mysql/` |
+| Backups | `/var/log/shophosting-backup.log` |
+
+## Development
+
+### Running Tests
+
+```bash
+cd /opt/shophosting/webapp
+source venv/bin/activate
+
+# Run all tests
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ -v --cov=. --cov-report=term-missing
+
+# Run specific test file
+pytest tests/test_auth.py -v
+```
+
+### Code Quality
+
+```bash
+# Linting
+flake8 webapp/ --max-line-length=120
+
+# Security scan
+bandit -r webapp/ -ll
+
+# Dependency audit
+pip-audit
+```
+
+### Project Structure
 
 ```
 /opt/shophosting/
-├── webapp/                 # Flask web application
-│   ├── app.py              # Main routes and application
-│   ├── models.py           # Database models
-│   ├── email_service.py    # Email sending service
-│   ├── stripe_integration/ # Stripe payment integration
-│   │   ├── __init__.py
-│   │   ├── config.py       # Stripe configuration
-│   │   ├── checkout.py     # Checkout sessions
-│   │   ├── webhooks.py     # Webhook handlers
-│   │   ├── portal.py       # Customer portal
-│   │   └── pricing.py      # Stripe pricing sync
-│   ├── admin/              # Admin panel blueprint
-│   │   ├── __init__.py
-│   │   ├── routes.py       # Admin routes (includes admin user management)
-│   │   ├── models.py       # Admin user model
-│   │   ├── api.py          # Admin API endpoints
-│   │   └── templates/      # Admin panel templates
-│   │       ├── base_admin.html
-│   │       ├── admins.html           # Admin users list
-│   │       ├── admin_form.html       # Create/edit admin form
-│   │       ├── change_password.html  # Password change form
-│   │       ├── pages.html            # CMS page list
-│   │       ├── page_edit.html        # CMS page editor
-│   │       ├── page_history.html     # CMS version history
-│   │       ├── appointments.html     # Consultation appointments list
-│   │       ├── appointment_detail.html # Appointment detail view
-│   │       ├── pricing_plans.html    # Pricing plans list
-│   │       ├── pricing_plan_edit.html # Pricing plan editor
-│   │       └── ...
-│   └── templates/          # Customer-facing templates
-│       ├── base.html
-│       ├── dashboard.html
-│       ├── backup.html     # Customer backup management
-│       └── ...
-├── provisioning/           # Background worker
-│   └── provisioning_worker.py
-├── templates/              # Docker Compose templates
-│   ├── woocommerce-compose.yml.j2
-│   └── magento-compose.yml.j2
-├── docker/                 # Custom Docker images
-├── migrations/             # Database migrations
-│   ├── 002_add_admin_users.sql
-│   ├── 003_add_ticketing_system.sql
-│   ├── 005_add_admin_features.sql
-│   ├── 006_add_cms_tables.sql      # CMS and page versions
-│   └── 007_add_consultations_table.sql  # Consultation appointments
-├── scripts/                # Utility scripts
-│   ├── backup.sh           # Daily customer data backup script
-│   ├── shophosting-dir-backup.sh  # Application code backup script
-│   ├── restic-backup-config.sh    # Backup configuration
-│   ├── customer-backup.sh  # Customer self-service backup script
-│   ├── customer-restore.sh # Customer self-service restore script
-│   ├── create_admin.py     # Create admin users
-│   └── setup_stripe_products.py
-├── logs/                   # Application logs
-│   ├── webapp.log          # Application logs
-│   └── security.log        # Security audit trail
-├── schema.sql              # Database schema
-├── shophosting-backup.service   # Customer data backup systemd service
-├── shophosting-backup.timer     # Customer data backup systemd timer
-├── shophosting-dir-backup.service  # App code backup systemd service
-├── shophosting-dir-backup.timer    # App code backup systemd timer
-├── SECURITY.md             # Security documentation
-├── .github/workflows/      # CI/CD pipeline
-│   └── ci.yml              # Lint, test, security scan
-└── .env                    # Environment configuration
+├── webapp/                    # Flask web application
+│   ├── app.py                 # Main routes (3,300+ lines)
+│   ├── models.py              # Database models (4,300+ lines)
+│   ├── secrets.py             # Vault integration
+│   ├── migrate.py             # Migration runner
+│   ├── admin/                 # Admin panel blueprint
+│   ├── cloudflare/            # DNS management
+│   ├── stripe_integration/    # Billing integration
+│   ├── status/                # Status page
+│   └── tests/                 # Test suite
+├── provisioning/              # Background workers
+│   ├── provisioning_worker.py # Main provisioning
+│   ├── staging_worker.py      # Staging operations
+│   ├── resource_worker.py     # Resource monitoring
+│   └── backup_worker.py       # Backup jobs
+├── templates/                 # Docker Compose templates
+├── monitoring/                # Prometheus/Grafana/Loki stack
+├── redis/                     # Redis Sentinel configuration
+├── vault/                     # HashiCorp Vault configuration
+├── configs/                   # System configurations
+│   ├── mysql/                 # Replication configs
+│   ├── nginx/                 # Load balancer configs
+│   └── logrotate/             # Log rotation
+├── migrations/                # Database migrations (17 files)
+├── scripts/                   # Operational scripts
+│   ├── backup.sh              # Backup script
+│   ├── restore.sh             # Restore tool
+│   ├── vault-init.sh          # Vault setup
+│   ├── setup-load-balancing.sh
+│   ├── setup-mysql-replication.sh
+│   ├── rolling-restart.sh
+│   └── dr-test.sh             # DR verification
+├── docs/                      # Documentation
+│   └── runbooks/              # Operational runbooks
+└── docker/                    # Custom Docker images
 ```
-
-## Documentation
-
-- [Security Policy](SECURITY.md) - Security architecture and incident response
-- [Development Guide](DEVELOPMENT_GUIDE.md) - Detailed development instructions
-- [System Guide](SYSTEM_GUIDE.md) - System architecture and operations
 
 ## License
 
-Copyright (c) 2026. All rights reserved.
+Copyright (c) 2026 ShopHosting.io. All rights reserved.
+
+## Support
+
+- GitHub Issues: https://github.com/NathanJHarrell/shophosting/issues
+- Documentation: https://docs.shophosting.io
+- Status Page: https://status.shophosting.io

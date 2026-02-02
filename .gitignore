@@ -11,6 +11,7 @@
 *.secret
 secrets/
 .restic-password
+test-promo-codes.txt
 
 # Virtual environments
 venv/
@@ -56,3 +57,29 @@ quick_provision.py
 # Docker environment files
 docker/wordpress/.env
 .system-restic-password
+
+# OpenProject (local development, contains data and secrets)
+openproject/
+
+# Wiki.js (local instance, contains secrets)
+wikijs/
+.worktrees/
+
+# ===================
+# Marketing Module (Proprietary)
+# ===================
+
+# All marketing code
+webapp/admin/marketing/
+
+# Marketing templates
+webapp/templates/admin/marketing/
+
+# Marketing documentation
+docs/plans/*-marketing-*.md
+
+# MCP config (contains marketing server)
+.mcp.json
+
+# Generated reports
+webapp/admin/marketing/reports/*.pdf

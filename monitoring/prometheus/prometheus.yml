@@ -1,0 +1,41 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # cAdvisor container metrics
+  - job_name: 'cadvisor'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  # ShopHosting webapp metrics (via public HTTPS endpoint)
+  - job_name: 'shophosting'
+    scrape_interval: 30s
+    scheme: https
+    static_configs:
+      - targets: ['shophosting.io']
+    metrics_path: /metrics
+
+  # Container metrics with customer labels
+  - job_name: 'container-metrics'
+    scrape_interval: 15s
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    static_configs:
+      - targets: ['shophosting.io']
+    metrics_path: /metrics/containers

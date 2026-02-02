@@ -9,22 +9,30 @@ from mysql.connector import pooling
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# Database connection pool
-db_pool = None
+# Database connection pools
+db_pool = None       # Primary pool for writes
+db_pool_read = None  # Read replica pool (optional)
 
 
 def init_db_pool():
-    """Initialize database connection pool"""
-    global db_pool
+    """Initialize database connection pool(s)"""
+    global db_pool, db_pool_read
+
+    # In testing mode, allow graceful failure if database isn't available
+    is_testing = os.getenv('FLASK_ENV') == 'testing'
 
     # Validate required database configuration
     db_password = os.getenv('DB_PASSWORD')
     if not db_password:
+        if is_testing:
+            print("WARNING: DB_PASSWORD not set, skipping database pool initialization in test mode")
+            return None
         raise RuntimeError(
             "CRITICAL: DB_PASSWORD environment variable is required. "
             "Please set it in /opt/shophosting/.env"
         )
 
+    # Primary (write) pool configuration
     db_config = {
         'host': os.getenv('DB_HOST', 'localhost'),
         'user': os.getenv('DB_USER', 'shophosting_app'),
@@ -34,15 +42,57 @@ def init_db_pool():
         'pool_size': int(os.getenv('DB_POOL_SIZE', '5'))
     }
 
-    db_pool = pooling.MySQLConnectionPool(**db_config)
-    return db_pool
+    try:
+        db_pool = pooling.MySQLConnectionPool(**db_config)
+
+        # Initialize read replica pool if configured
+        replica_host = os.getenv('DB_REPLICA_HOST')
+        if replica_host:
+            replica_config = {
+                'host': replica_host,
+                'user': os.getenv('DB_REPLICA_USER', 'shophosting_read'),
+                'password': os.getenv('DB_REPLICA_PASSWORD', db_password),
+                'database': os.getenv('DB_NAME', 'shophosting_db'),
+                'pool_name': 'shophosting_read_pool',
+                'pool_size': int(os.getenv('DB_REPLICA_POOL_SIZE', '3'))
+            }
+            try:
+                db_pool_read = pooling.MySQLConnectionPool(**replica_config)
+                print(f"INFO: Read replica pool initialized ({replica_host})")
+            except mysql.connector.Error as e:
+                print(f"WARNING: Could not connect to read replica, using primary for reads: {e}")
+                db_pool_read = None
+
+        return db_pool
+    except mysql.connector.Error as e:
+        if is_testing:
+            print(f"WARNING: Could not connect to database in test mode: {e}")
+            return None
+        raise
 
 
-def get_db_connection():
-    """Get a connection from the pool"""
-    global db_pool
+def get_db_connection(read_only=False):
+    """
+    Get a connection from the appropriate pool.
+
+    Args:
+        read_only: If True and a read replica is configured, use the replica pool.
+                   Otherwise, use the primary pool.
+
+    Returns:
+        MySQL connection from the pool
+    """
     if db_pool is None:
         init_db_pool()
+
+    # Use read replica if available and requested
+    if read_only and db_pool_read is not None:
+        try:
+            return db_pool_read.get_connection()
+        except mysql.connector.Error:
+            # Fall back to primary if replica is unavailable
+            pass
+
     return db_pool.get_connection()
 
 
@@ -64,7 +114,7 @@ class PortManager:
 
         try:
             # Get all currently used ports
-            cursor.execute("SELECT web_port FROM customers WHERE web_port IS NOT NULL")
+            cursor.execute("SELECT web_port FROM customers WHERE web_port IS NOT NULL FOR UPDATE")
             used_ports = {row[0] for row in cursor.fetchall()}
 
             # Find first available port in range
@@ -125,13 +175,12 @@ class Customer:
 
     def __init__(self, id=None, email=None, password_hash=None, company_name=None,
                  domain=None, platform=None, status='pending', web_port=None,
-                 db_name=None, db_user=None, db_password=None,
-                 admin_user=None, admin_password=None, error_message=None,
-                 stripe_customer_id=None, plan_id=None, server_id=None,
-                 quota_project_id=None, staging_count=0, password_changed_at=None,
-                 timezone='America/New_York', suspension_reason=None, suspended_at=None,
-                 auto_suspended=False, reactivated_at=None,
-                 created_at=None, updated_at=None):
+                 server_id=None, quota_project_id=None, db_name=None, db_user=None,
+                 db_password=None, admin_user=None, admin_password=None,
+                 error_message=None, stripe_customer_id=None, plan_id=None,
+                 staging_count=None, password_changed_at=None, timezone=None,
+                 suspension_reason=None, suspended_at=None, auto_suspended=False,
+                 reactivated_at=None, created_at=None, updated_at=None):
         self.id = id
         self.email = email
         self.password_hash = password_hash
@@ -140,6 +189,8 @@ class Customer:
         self.platform = platform
         self.status = status
         self.web_port = web_port
+        self.server_id = server_id
+        self.quota_project_id = quota_project_id
         self.db_name = db_name
         self.db_user = db_user
         self.db_password = db_password
@@ -148,14 +199,13 @@ class Customer:
         self.error_message = error_message
         self.stripe_customer_id = stripe_customer_id
         self.plan_id = plan_id
-        self.server_id = server_id
-        self.quota_project_id = quota_project_id
-        self.staging_count = staging_count
+        self.staging_count = staging_count or 0
         self.password_changed_at = password_changed_at
-        self.timezone = timezone
+        self.timezone = timezone or 'America/New_York'
+        # Suspension tracking fields
         self.suspension_reason = suspension_reason
         self.suspended_at = suspended_at
-        self.auto_suspended = auto_suspended
+        self.auto_suspended = auto_suspended or False
         self.reactivated_at = reactivated_at
         self.created_at = created_at or datetime.now()
         self.updated_at = updated_at or datetime.now()
@@ -171,6 +221,62 @@ class Customer:
     def check_password(self, password):
         """Verify password"""
         return check_password_hash(self.password_hash, password)
+
+    def update_password_changed_at(self):
+        """Update the password_changed_at timestamp and save new password"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE customers
+                SET password_hash = %s, password_changed_at = NOW()
+                WHERE id = %s
+            """, (self.password_hash, self.id))
+            conn.commit()
+            self.password_changed_at = datetime.now()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update_profile(self, company_name=None, timezone=None):
+        """Update customer profile information"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            updates = []
+            values = []
+            if company_name is not None:
+                updates.append("company_name = %s")
+                values.append(company_name)
+                self.company_name = company_name
+            if timezone is not None:
+                updates.append("timezone = %s")
+                values.append(timezone)
+                self.timezone = timezone
+
+            if updates:
+                values.append(self.id)
+                cursor.execute(f"""
+                    UPDATE customers SET {', '.join(updates)} WHERE id = %s
+                """, values)
+                conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update_email(self, new_email):
+        """Update customer email"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE customers SET email = %s WHERE id = %s
+            """, (new_email, self.id))
+            conn.commit()
+            self.email = new_email
+        finally:
+            cursor.close()
+            conn.close()
 
     # =========================================================================
     # Flask-Login Required Properties
@@ -192,6 +298,124 @@ class Customer:
         return str(self.id)
 
     # =========================================================================
+    # Suspension Methods
+    # =========================================================================
+
+    def suspend(self, reason, auto=False, disk_usage_bytes=None, bandwidth_usage_bytes=None):
+        """
+        Suspend this customer account.
+
+        Args:
+            reason: Reason for suspension (e.g., 'resource_limit_exceeded', 'payment_failed')
+            auto: True if this is an automatic system suspension
+            disk_usage_bytes: Current disk usage at time of suspension
+            bandwidth_usage_bytes: Current bandwidth usage at time of suspension
+        """
+        if self.status == 'suspended':
+            return False  # Already suspended
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            # Update customer status
+            cursor.execute("""
+                UPDATE customers
+                SET status = 'suspended',
+                    suspension_reason = %s,
+                    suspended_at = NOW(),
+                    auto_suspended = %s
+                WHERE id = %s AND status != 'suspended'
+            """, (reason, auto, self.id))
+
+            if cursor.rowcount == 0:
+                return False  # No update made (already suspended or doesn't exist)
+
+            # Log the suspension
+            cursor.execute("""
+                INSERT INTO customer_suspension_log
+                (customer_id, action, reason, auto_action, disk_usage_bytes, bandwidth_usage_bytes)
+                VALUES (%s, 'suspended', %s, %s, %s, %s)
+            """, (self.id, reason, auto, disk_usage_bytes, bandwidth_usage_bytes))
+
+            conn.commit()
+
+            # Update local object
+            self.status = 'suspended'
+            self.suspension_reason = reason
+            self.suspended_at = datetime.now()
+            self.auto_suspended = auto
+
+            return True
+        finally:
+            cursor.close()
+            conn.close()
+
+    def reactivate(self, actor_id=None):
+        """
+        Reactivate this suspended customer account.
+
+        Args:
+            actor_id: ID of admin user performing reactivation (None if automatic)
+        """
+        if self.status != 'suspended':
+            return False  # Not suspended
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            # Update customer status
+            cursor.execute("""
+                UPDATE customers
+                SET status = 'active',
+                    suspension_reason = NULL,
+                    suspended_at = NULL,
+                    auto_suspended = FALSE,
+                    reactivated_at = NOW()
+                WHERE id = %s AND status = 'suspended'
+            """, (self.id,))
+
+            if cursor.rowcount == 0:
+                return False  # No update made
+
+            # Log the reactivation
+            cursor.execute("""
+                INSERT INTO customer_suspension_log
+                (customer_id, action, reason, auto_action, actor_id)
+                VALUES (%s, 'reactivated', 'manual_reactivation', %s, %s)
+            """, (self.id, actor_id is None, actor_id))
+
+            conn.commit()
+
+            # Update local object
+            self.status = 'active'
+            self.suspension_reason = None
+            self.suspended_at = None
+            self.auto_suspended = False
+            self.reactivated_at = datetime.now()
+
+            return True
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_auto_suspended_customers():
+        """Get all customers that were auto-suspended (for potential auto-reactivation)"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT * FROM customers
+                WHERE status = 'suspended' AND auto_suspended = TRUE
+                ORDER BY suspended_at
+            """)
+            rows = cursor.fetchall()
+            return [Customer(**row) for row in rows]
+        finally:
+            cursor.close()
+            conn.close()
+
+    # =========================================================================
     # Database Operations
     # =========================================================================
 
@@ -206,13 +430,13 @@ class Customer:
                 cursor.execute("""
                     INSERT INTO customers
                     (email, password_hash, company_name, domain, platform, status, web_port,
-                     stripe_customer_id, plan_id, created_at, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     server_id, quota_project_id, stripe_customer_id, plan_id, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     self.email, self.password_hash, self.company_name,
                     self.domain, self.platform, self.status, self.web_port,
-                    self.stripe_customer_id, self.plan_id,
-                    self.created_at, self.updated_at
+                    self.server_id, self.quota_project_id, self.stripe_customer_id,
+                    self.plan_id, self.created_at, self.updated_at
                 ))
                 self.id = cursor.lastrowid
             else:
@@ -221,13 +445,14 @@ class Customer:
                     UPDATE customers SET
                         email = %s, password_hash = %s, company_name = %s,
                         domain = %s, platform = %s, status = %s, web_port = %s,
-                        stripe_customer_id = %s, plan_id = %s, updated_at = %s
+                        server_id = %s, quota_project_id = %s, stripe_customer_id = %s,
+                        plan_id = %s, updated_at = %s
                     WHERE id = %s
                 """, (
                     self.email, self.password_hash, self.company_name,
                     self.domain, self.platform, self.status, self.web_port,
-                    self.stripe_customer_id, self.plan_id,
-                    datetime.now(), self.id
+                    self.server_id, self.quota_project_id, self.stripe_customer_id,
+                    self.plan_id, datetime.now(), self.id
                 ))
 
             conn.commit()
@@ -241,7 +466,7 @@ class Customer:
         """Delete customer from database"""
         if self.id is None:
             return False
-            
+
         conn = get_db_connection()
         cursor = conn.cursor()
 
@@ -252,6 +477,33 @@ class Customer:
         finally:
             cursor.close()
             conn.close()
+
+    def get_resource_usage(self):
+        """Get current resource usage with limits"""
+        plan = PricingPlan.get_by_id(self.plan_id) if self.plan_id else None
+
+        disk_used = ResourceUsage.get_current_disk_usage(self.id)
+        bandwidth_used = ResourceUsage.get_monthly_bandwidth(self.id)
+
+        disk_limit = (plan.disk_limit_gb * 1024 * 1024 * 1024) if plan else 25 * 1024 * 1024 * 1024
+        bandwidth_limit = (plan.bandwidth_limit_gb * 1024 * 1024 * 1024) if plan else 250 * 1024 * 1024 * 1024
+
+        return {
+            'disk': {
+                'used_bytes': disk_used,
+                'limit_bytes': disk_limit,
+                'used_gb': round(disk_used / (1024 * 1024 * 1024), 2),
+                'limit_gb': plan.disk_limit_gb if plan else 25,
+                'percent': round((disk_used / disk_limit) * 100, 1) if disk_limit > 0 else 0
+            },
+            'bandwidth': {
+                'used_bytes': bandwidth_used,
+                'limit_bytes': bandwidth_limit,
+                'used_gb': round(bandwidth_used / (1024 * 1024 * 1024), 2),
+                'limit_gb': plan.bandwidth_limit_gb if plan else 250,
+                'percent': round((bandwidth_used / bandwidth_limit) * 100, 1) if bandwidth_limit > 0 else 0
+            }
+        }
 
     # =========================================================================
     # Static Query Methods
@@ -406,9 +658,16 @@ class Customer:
             'platform': self.platform,
             'status': self.status,
             'web_port': self.web_port,
+            'server_id': self.server_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
+
+    def get_server(self):
+        """Get the server this customer is hosted on"""
+        if not self.server_id:
+            return None
+        return Server.get_by_id(self.server_id)
 
     def __repr__(self):
         return f"<Customer {self.id}: {self.email}>"
@@ -442,7 +701,8 @@ class PricingPlan:
     def __init__(self, id=None, name=None, slug=None, platform=None, tier_type=None,
                  price_monthly=None, store_limit=1, stripe_product_id=None,
                  stripe_price_id=None, features=None, memory_limit='1g',
-                 cpu_limit='1.0', is_active=True, display_order=0,
+                 cpu_limit='1.0', disk_limit_gb=25, bandwidth_limit_gb=250,
+                 is_active=True, display_order=0,
                  created_at=None, updated_at=None):
         self.id = id
         self.name = name
@@ -456,6 +716,8 @@ class PricingPlan:
         self.features = features if features else {}
         self.memory_limit = memory_limit
         self.cpu_limit = cpu_limit
+        self.disk_limit_gb = disk_limit_gb
+        self.bandwidth_limit_gb = bandwidth_limit_gb
         self.is_active = is_active
         self.display_order = display_order
         self.created_at = created_at
@@ -633,6 +895,198 @@ class PricingPlan:
 
 
 # =============================================================================
+# ResourceUsage Model
+# =============================================================================
+
+class ResourceUsage:
+    """Daily resource usage snapshot for a customer"""
+
+    def __init__(self, id=None, customer_id=None, date=None,
+                 disk_used_bytes=0, bandwidth_used_bytes=0, created_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.date = date
+        self.disk_used_bytes = disk_used_bytes
+        self.bandwidth_used_bytes = bandwidth_used_bytes
+        self.created_at = created_at
+
+    def save(self):
+        """Save or update resource usage record"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Use INSERT ... ON DUPLICATE KEY UPDATE for upsert
+            cursor.execute("""
+                INSERT INTO resource_usage (customer_id, date, disk_used_bytes, bandwidth_used_bytes)
+                VALUES (%s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    disk_used_bytes = VALUES(disk_used_bytes),
+                    bandwidth_used_bytes = VALUES(bandwidth_used_bytes)
+            """, (self.customer_id, self.date, self.disk_used_bytes, self.bandwidth_used_bytes))
+            conn.commit()
+            if self.id is None:
+                self.id = cursor.lastrowid
+            return self
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_for_customer(customer_id, date):
+        """Get usage for a specific customer and date"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute(
+                "SELECT * FROM resource_usage WHERE customer_id = %s AND date = %s",
+                (customer_id, date)
+            )
+            row = cursor.fetchone()
+            if row:
+                return ResourceUsage(**row)
+            return None
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_monthly_bandwidth(customer_id):
+        """Get total bandwidth used in current billing month"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT COALESCE(SUM(bandwidth_used_bytes), 0)
+                FROM resource_usage
+                WHERE customer_id = %s
+                AND date >= DATE_FORMAT(NOW(), '%%Y-%%m-01')
+            """, (customer_id,))
+            result = cursor.fetchone()
+            return result[0] if result else 0
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_current_disk_usage(customer_id):
+        """Get most recent disk usage for customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT disk_used_bytes FROM resource_usage
+                WHERE customer_id = %s
+                ORDER BY date DESC LIMIT 1
+            """, (customer_id,))
+            result = cursor.fetchone()
+            return result[0] if result else 0
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_usage_history(customer_id, days=30):
+        """Get usage history for last N days"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("""
+                SELECT * FROM resource_usage
+                WHERE customer_id = %s
+                AND date >= DATE_SUB(CURDATE(), INTERVAL %s DAY)
+                ORDER BY date ASC
+            """, (customer_id, days))
+            rows = cursor.fetchall()
+            return [ResourceUsage(**row) for row in rows]
+        finally:
+            cursor.close()
+            conn.close()
+
+
+# =============================================================================
+# ResourceAlert Model
+# =============================================================================
+
+class ResourceAlert:
+    """Resource limit alert record"""
+
+    ALERT_TYPES = ['disk_warning', 'disk_critical', 'bandwidth_warning', 'bandwidth_critical']
+
+    def __init__(self, id=None, customer_id=None, alert_type=None,
+                 threshold_percent=None, current_usage_bytes=None,
+                 limit_bytes=None, notified_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.alert_type = alert_type
+        self.threshold_percent = threshold_percent
+        self.current_usage_bytes = current_usage_bytes
+        self.limit_bytes = limit_bytes
+        self.notified_at = notified_at
+
+    def save(self):
+        """Save alert record"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                INSERT INTO resource_alerts
+                (customer_id, alert_type, threshold_percent, current_usage_bytes, limit_bytes)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (self.customer_id, self.alert_type, self.threshold_percent,
+                  self.current_usage_bytes, self.limit_bytes))
+            conn.commit()
+            self.id = cursor.lastrowid
+            return self
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def was_recently_sent(customer_id, alert_type, hours=24):
+        """Check if this alert type was sent recently"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) FROM resource_alerts
+                WHERE customer_id = %s
+                AND alert_type = %s
+                AND notified_at > DATE_SUB(NOW(), INTERVAL %s HOUR)
+            """, (customer_id, alert_type, hours))
+            count = cursor.fetchone()[0]
+            return count > 0
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_recent_for_customer(customer_id, limit=10):
+        """Get recent alerts for a customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("""
+                SELECT * FROM resource_alerts
+                WHERE customer_id = %s
+                ORDER BY notified_at DESC
+                LIMIT %s
+            """, (customer_id, limit))
+            rows = cursor.fetchall()
+            return [ResourceAlert(**row) for row in rows]
+        finally:
+            cursor.close()
+            conn.close()
+
+
+# =============================================================================
 # Subscription Model
 # =============================================================================
 
@@ -716,6 +1170,22 @@ class Subscription:
             conn.close()
 
     @staticmethod
+    def get_by_id(subscription_id):
+        """Get subscription by ID"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("SELECT * FROM subscriptions WHERE id = %s", (subscription_id,))
+            row = cursor.fetchone()
+            if row:
+                return Subscription(**row)
+            return None
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
     def get_by_stripe_subscription_id(stripe_subscription_id):
         """Get subscription by Stripe subscription ID"""
         conn = get_db_connection()
@@ -750,7 +1220,7 @@ class Invoice:
                  amount_due=0, amount_paid=0, currency='usd', status='draft',
                  invoice_pdf_url=None, hosted_invoice_url=None,
                  period_start=None, period_end=None, paid_at=None,
-                 created_at=None):
+                 created_at=None, manual=False, notes=None, created_by_admin_id=None):
         self.id = id
         self.customer_id = customer_id
         self.subscription_id = subscription_id
@@ -766,6 +1236,9 @@ class Invoice:
         self.period_end = period_end
         self.paid_at = paid_at
         self.created_at = created_at or datetime.now()
+        self.manual = manual
+        self.notes = notes
+        self.created_by_admin_id = created_by_admin_id
 
     def save(self):
         """Save invoice to database"""
@@ -801,6 +1274,22 @@ class Invoice:
 
             conn.commit()
             return self
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_id(invoice_id):
+        """Get invoice by ID"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("SELECT * FROM invoices WHERE id = %s", (invoice_id,))
+            row = cursor.fetchone()
+            if row:
+                return Invoice(**row)
+            return None
         finally:
             cursor.close()
             conn.close()
@@ -1623,3 +2112,2295 @@ class ConsultationAppointment:
 
     def __repr__(self):
         return f"<ConsultationAppointment {self.id}: {self.full_name} on {self.scheduled_date}>"
+
+
+# =============================================================================
+# Customer Backup Job Model
+# =============================================================================
+
+class CustomerBackupJob:
+    """Tracks customer backup and restore operations"""
+
+    def __init__(self, id=None, customer_id=None, job_type=None, backup_type=None,
+                 snapshot_id=None, status='pending', error_message=None,
+                 created_at=None, completed_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.job_type = job_type  # 'backup' or 'restore'
+        self.backup_type = backup_type  # 'db', 'files', or 'both'
+        self.snapshot_id = snapshot_id
+        self.status = status
+        self.error_message = error_message
+        self.created_at = created_at or datetime.now()
+        self.completed_at = completed_at
+
+    def save(self):
+        """Save job to database"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            if self.id is None:
+                cursor.execute("""
+                    INSERT INTO customer_backup_jobs
+                    (customer_id, job_type, backup_type, snapshot_id, status,
+                     error_message, created_at, completed_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    self.customer_id, self.job_type, self.backup_type,
+                    self.snapshot_id, self.status, self.error_message,
+                    self.created_at, self.completed_at
+                ))
+                self.id = cursor.lastrowid
+            else:
+                cursor.execute("""
+                    UPDATE customer_backup_jobs SET
+                        status = %s, error_message = %s, completed_at = %s,
+                        snapshot_id = %s
+                    WHERE id = %s
+                """, (self.status, self.error_message, self.completed_at,
+                      self.snapshot_id, self.id))
+
+            conn.commit()
+            return self
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update_status(self, status, error_message=None):
+        """Update job status"""
+        self.status = status
+        self.error_message = error_message
+        if status in ('completed', 'failed'):
+            self.completed_at = datetime.now()
+        self.save()
+
+    @staticmethod
+    def get_by_id(job_id):
+        """Get job by ID"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("SELECT * FROM customer_backup_jobs WHERE id = %s", (job_id,))
+            row = cursor.fetchone()
+            if row:
+                return CustomerBackupJob(**row)
+            return None
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_active_job(customer_id):
+        """Get active (pending/running) job for customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_backup_jobs
+                WHERE customer_id = %s AND status IN ('pending', 'running')
+                ORDER BY created_at DESC LIMIT 1
+            """, (customer_id,))
+            row = cursor.fetchone()
+            if row:
+                return CustomerBackupJob(**row)
+            return None
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_recent_jobs(customer_id, limit=10):
+        """Get recent jobs for customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_backup_jobs
+                WHERE customer_id = %s
+                ORDER BY created_at DESC LIMIT %s
+            """, (customer_id, limit))
+            return [CustomerBackupJob(**row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+            conn.close()
+
+    def to_dict(self):
+        """Convert to dictionary"""
+        return {
+            'id': self.id,
+            'customer_id': self.customer_id,
+            'job_type': self.job_type,
+            'backup_type': self.backup_type,
+            'snapshot_id': self.snapshot_id,
+            'status': self.status,
+            'error_message': self.error_message,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None
+        }
+
+    def __repr__(self):
+        return f"<CustomerBackupJob {self.id}: {self.job_type} - {self.status}>"
+
+
+class StagingPortManager:
+    """Manages port allocation for staging environment containers"""
+    # Using 10001-10100 to avoid conflict with phpMyAdmin ports (9001-9100)
+    PORT_RANGE_START = 10001
+    PORT_RANGE_END = 10100
+
+    @staticmethod
+    def get_next_available_port():
+        """Get the next available port for a new staging environment"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Get all currently used staging ports
+            cursor.execute("SELECT web_port FROM staging_environments WHERE web_port IS NOT NULL AND status != 'deleted' FOR UPDATE")
+            used_ports = {row[0] for row in cursor.fetchall()}
+
+            # Find first available port in range
+            for port in range(StagingPortManager.PORT_RANGE_START, StagingPortManager.PORT_RANGE_END + 1):
+                if port not in used_ports:
+                    return port
+
+            return None  # No ports available
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def is_port_available(port):
+        """Check if a specific port is available"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("SELECT COUNT(*) FROM staging_environments WHERE web_port = %s AND status != 'deleted'", (port,))
+            count = cursor.fetchone()[0]
+            return count == 0
+        finally:
+            cursor.close()
+            conn.close()
+
+
+# =============================================================================
+# Staging Environment Model
+# =============================================================================
+
+class StagingEnvironment:
+    """Staging environment model for customer staging sites"""
+
+    MAX_STAGING_PER_CUSTOMER = 3
+    STATUSES = ['creating', 'active', 'syncing', 'failed', 'deleted']
+
+    def __init__(self, id=None, customer_id=None, name=None, staging_domain=None,
+                 status='creating', web_port=None, db_name=None, db_user=None,
+                 db_password=None, source_snapshot_date=None, last_push_date=None,
+                 created_at=None, updated_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.name = name
+        self.staging_domain = staging_domain
+        self.status = status
+        self.web_port = web_port
+        self.db_name = db_name
+        self.db_user = db_user
+        self.db_password = db_password
+        self.source_snapshot_date = source_snapshot_date
+        self.last_push_date = last_push_date
+        self.created_at = created_at or datetime.now()
+        self.updated_at = updated_at or datetime.now()
+
+    # =========================================================================
+    # Database Operations
+    # =========================================================================
+
+    def save(self):
+        """Save staging environment to database (insert or update)"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            if self.id is None:
+                cursor.execute("""
+                    INSERT INTO staging_environments
+                    (customer_id, name, staging_domain, status, web_port,
+                     db_name, db_user, db_password, source_snapshot_date,
+                     created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    self.customer_id, self.name, self.staging_domain, self.status,
+                    self.web_port, self.db_name, self.db_user, self.db_password,
+                    self.source_snapshot_date, self.created_at, self.updated_at
+                ))
+                self.id = cursor.lastrowid
+
+                # Update customer's staging count
+                cursor.execute("""
+                    UPDATE customers SET staging_count = (
+                        SELECT COUNT(*) FROM staging_environments
+                        WHERE customer_id = %s AND status != 'deleted'
+                    ) WHERE id = %s
+                """, (self.customer_id, self.customer_id))
+            else:
+                cursor.execute("""
+                    UPDATE staging_environments SET
+                        name = %s, staging_domain = %s, status = %s, web_port = %s,
+                        db_name = %s, db_user = %s, db_password = %s,
+                        source_snapshot_date = %s, last_push_date = %s, updated_at = %s
+                    WHERE id = %s
+                """, (
+                    self.name, self.staging_domain, self.status, self.web_port,
+                    self.db_name, self.db_user, self.db_password,
+                    self.source_snapshot_date, self.last_push_date,
+                    datetime.now(), self.id
+                ))
+
+            conn.commit()
+            return self
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update_status(self, status):
+        """Update staging environment status"""
+        self.status = status
+        self.updated_at = datetime.now()
+        return self.save()
+
+    def mark_deleted(self):
+        """Mark staging environment as deleted"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            self.status = 'deleted'
+            cursor.execute("""
+                UPDATE staging_environments SET status = 'deleted', updated_at = %s
+                WHERE id = %s
+            """, (datetime.now(), self.id))
+
+            # Update customer's staging count
+            cursor.execute("""
+                UPDATE customers SET staging_count = (
+                    SELECT COUNT(*) FROM staging_environments
+                    WHERE customer_id = %s AND status != 'deleted'
+                ) WHERE id = %s
+            """, (self.customer_id, self.customer_id))
+
+            conn.commit()
+            return True
+        finally:
+            cursor.close()
+            conn.close()
+
+    # =========================================================================
+    # Static Query Methods
+    # =========================================================================
+
+    @staticmethod
+    def get_by_id(staging_id):
+        """Get staging environment by ID"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("SELECT * FROM staging_environments WHERE id = %s", (staging_id,))
+            row = cursor.fetchone()
+
+            if row:
+                return StagingEnvironment(**row)
+            return None
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_customer(customer_id, include_deleted=False):
+        """Get all staging environments for a customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            if include_deleted:
+                cursor.execute("""
+                    SELECT * FROM staging_environments
+                    WHERE customer_id = %s
+                    ORDER BY created_at DESC
+                """, (customer_id,))
+            else:
+                cursor.execute("""
+                    SELECT * FROM staging_environments
+                    WHERE customer_id = %s AND status != 'deleted'
+                    ORDER BY created_at DESC
+                """, (customer_id,))
+
+            rows = cursor.fetchall()
+            return [StagingEnvironment(**row) for row in rows]
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_domain(staging_domain):
+        """Get staging environment by domain"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("SELECT * FROM staging_environments WHERE staging_domain = %s", (staging_domain,))
+            row = cursor.fetchone()
+
+            if row:
+                return StagingEnvironment(**row)
+            return None
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def count_by_customer(customer_id):
+        """Count active staging environments for a customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) FROM staging_environments
+                WHERE customer_id = %s AND status != 'deleted'
+            """, (customer_id,))
+            return cursor.fetchone()[0]
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def can_create_staging(customer_id):
+        """Check if customer can create another staging environment"""
+        count = StagingEnvironment.count_by_customer(customer_id)
+        return count < StagingEnvironment.MAX_STAGING_PER_CUSTOMER
+
+    @staticmethod
+    def get_all(include_deleted=False, page=1, per_page=20):
+        """Get all staging environments (for admin)"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            where = "1=1" if include_deleted else "se.status != 'deleted'"
+            offset = (page - 1) * per_page
+
+            # Get count
+            cursor.execute(f"SELECT COUNT(*) as count FROM staging_environments se WHERE {where}")
+            total = cursor.fetchone()['count']
+
+            # Get paginated results with customer info
+            cursor.execute(f"""
+                SELECT se.*, c.email as customer_email, c.domain as production_domain,
+                       c.company_name as customer_company, c.platform
+                FROM staging_environments se
+                JOIN customers c ON se.customer_id = c.id
+                WHERE {where}
+                ORDER BY se.created_at DESC
+                LIMIT %s OFFSET %s
+            """, (per_page, offset))
+
+            rows = cursor.fetchall()
+            return rows, total
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    # =========================================================================
+    # Sync History Methods
+    # =========================================================================
+
+    def log_sync(self, sync_type, status='pending'):
+        """Log a sync operation"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                INSERT INTO staging_sync_history
+                (staging_id, sync_type, status, started_at, created_at)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (self.id, sync_type, status, datetime.now(), datetime.now()))
+
+            conn.commit()
+            return cursor.lastrowid
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def update_sync_status(sync_id, status, error_message=None):
+        """Update sync operation status"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            if status in ['completed', 'failed']:
+                cursor.execute("""
+                    UPDATE staging_sync_history
+                    SET status = %s, completed_at = %s, error_message = %s
+                    WHERE id = %s
+                """, (status, datetime.now(), error_message, sync_id))
+            else:
+                cursor.execute("""
+                    UPDATE staging_sync_history SET status = %s WHERE id = %s
+                """, (status, sync_id))
+
+            conn.commit()
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    def get_sync_history(self, limit=10):
+        """Get sync history for this staging environment"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("""
+                SELECT * FROM staging_sync_history
+                WHERE staging_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s
+            """, (self.id, limit))
+
+            return cursor.fetchall()
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    # =========================================================================
+    # Utility Methods
+    # =========================================================================
+
+    @staticmethod
+    def generate_staging_domain(customer_id, staging_number):
+        """Generate staging domain for a customer"""
+        return f"cust{customer_id}-staging-{staging_number}.shophosting.io"
+
+    def get_staging_url(self):
+        """Get full staging site URL"""
+        return f"https://{self.staging_domain}"
+
+    def to_dict(self):
+        """Convert to dictionary"""
+        return {
+            'id': self.id,
+            'customer_id': self.customer_id,
+            'name': self.name,
+            'staging_domain': self.staging_domain,
+            'staging_url': self.get_staging_url(),
+            'status': self.status,
+            'web_port': self.web_port,
+            'source_snapshot_date': self.source_snapshot_date.isoformat() if self.source_snapshot_date else None,
+            'last_push_date': self.last_push_date.isoformat() if self.last_push_date else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+    def __repr__(self):
+        return f"<StagingEnvironment {self.id}: {self.staging_domain}>"
+
+
+# =============================================================================
+# Server Model
+# =============================================================================
+
+class Server:
+    """Server model for multi-server provisioning"""
+
+    STATUSES = ['active', 'maintenance', 'offline']
+    HEARTBEAT_TIMEOUT_SECONDS = 120  # 2 minutes
+
+    def __init__(self, id=None, name=None, hostname=None, ip_address=None,
+                 status='active', max_customers=50, port_range_start=8001,
+                 port_range_end=8100, redis_queue_name=None, last_heartbeat=None,
+                 created_at=None, updated_at=None):
+        self.id = id
+        self.name = name
+        self.hostname = hostname
+        self.ip_address = ip_address
+        self.status = status
+        self.max_customers = max_customers
+        self.port_range_start = port_range_start
+        self.port_range_end = port_range_end
+        self.redis_queue_name = redis_queue_name
+        self.last_heartbeat = last_heartbeat
+        self.created_at = created_at
+        self.updated_at = updated_at
+
+    def save(self):
+        """Save server to database (insert or update)"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            if self.id is None:
+                cursor.execute("""
+                    INSERT INTO servers
+                    (name, hostname, ip_address, status, max_customers,
+                     port_range_start, port_range_end, redis_queue_name)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    self.name, self.hostname, self.ip_address, self.status,
+                    self.max_customers, self.port_range_start, self.port_range_end,
+                    self.redis_queue_name
+                ))
+                self.id = cursor.lastrowid
+            else:
+                cursor.execute("""
+                    UPDATE servers SET
+                        name = %s, hostname = %s, ip_address = %s, status = %s,
+                        max_customers = %s, port_range_start = %s, port_range_end = %s,
+                        redis_queue_name = %s
+                    WHERE id = %s
+                """, (
+                    self.name, self.hostname, self.ip_address, self.status,
+                    self.max_customers, self.port_range_start, self.port_range_end,
+                    self.redis_queue_name, self.id
+                ))
+
+            conn.commit()
+            return self
+        finally:
+            cursor.close()
+            conn.close()
+
+    def delete(self):
+        """Delete server from database (only if no customers assigned)"""
+        if self.id is None:
+            return False
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Check for assigned customers
+            cursor.execute("SELECT COUNT(*) FROM customers WHERE server_id = %s", (self.id,))
+            if cursor.fetchone()[0] > 0:
+                raise ValueError("Cannot delete server with assigned customers")
+
+            cursor.execute("DELETE FROM servers WHERE id = %s", (self.id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_id(server_id):
+        """Get server by ID"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("SELECT * FROM servers WHERE id = %s", (server_id,))
+            row = cursor.fetchone()
+            return Server(**row) if row else None
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_hostname(hostname):
+        """Get server by hostname"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("SELECT * FROM servers WHERE hostname = %s", (hostname,))
+            row = cursor.fetchone()
+            return Server(**row) if row else None
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_all():
+        """Get all servers"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("SELECT * FROM servers ORDER BY name")
+            return [Server(**row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_active():
+        """Get all active servers"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("SELECT * FROM servers WHERE status = 'active' ORDER BY name")
+            return [Server(**row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+            conn.close()
+
+    def get_customer_count(self):
+        """Get count of customers assigned to this server"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("SELECT COUNT(*) FROM customers WHERE server_id = %s", (self.id,))
+            return cursor.fetchone()[0]
+        finally:
+            cursor.close()
+            conn.close()
+
+    def get_used_ports(self):
+        """Get list of ports in use on this server"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT web_port FROM customers
+                WHERE server_id = %s AND web_port IS NOT NULL
+            """, (self.id,))
+            return [row[0] for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+            conn.close()
+
+    def get_available_port(self):
+        """Get next available port for this server"""
+        used_ports = set(self.get_used_ports())
+
+        for port in range(self.port_range_start, self.port_range_end + 1):
+            if port not in used_ports:
+                return port
+
+        return None  # No ports available
+
+    def get_port_capacity(self):
+        """Get port utilization info"""
+        used_ports = self.get_used_ports()
+        total_ports = self.port_range_end - self.port_range_start + 1
+
+        return {
+            'total': total_ports,
+            'used': len(used_ports),
+            'available': total_ports - len(used_ports),
+            'used_ports': used_ports
+        }
+
+    def has_capacity(self):
+        """Check if server has capacity for more customers"""
+        customer_count = self.get_customer_count()
+        available_port = self.get_available_port()
+
+        return (customer_count < self.max_customers and
+                available_port is not None)
+
+    def update_heartbeat(self):
+        """Update server heartbeat timestamp"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                "UPDATE servers SET last_heartbeat = NOW() WHERE id = %s",
+                (self.id,)
+            )
+            conn.commit()
+            self.last_heartbeat = datetime.now()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def is_healthy(self):
+        """Check if server heartbeat is recent"""
+        if not self.last_heartbeat:
+            return False
+
+        age = (datetime.now() - self.last_heartbeat).total_seconds()
+        return age < self.HEARTBEAT_TIMEOUT_SECONDS
+
+    def get_queue_name(self):
+        """Get Redis queue name for this server"""
+        if self.redis_queue_name:
+            return self.redis_queue_name
+        return f"provisioning:server-{self.id}"
+
+    def to_dict(self):
+        """Convert to dictionary"""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'hostname': self.hostname,
+            'ip_address': self.ip_address,
+            'status': self.status,
+            'max_customers': self.max_customers,
+            'port_range_start': self.port_range_start,
+            'port_range_end': self.port_range_end,
+            'redis_queue_name': self.redis_queue_name,
+            'last_heartbeat': self.last_heartbeat.isoformat() if self.last_heartbeat else None,
+            'is_healthy': self.is_healthy(),
+            'customer_count': self.get_customer_count(),
+            'has_capacity': self.has_capacity(),
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+    def __repr__(self):
+        return f"<Server {self.id}: {self.name} ({self.hostname})>"
+
+
+# =============================================================================
+# Server Selector
+# =============================================================================
+
+class ServerSelector:
+    """Selects the best server for new customer provisioning"""
+
+    @staticmethod
+    def select_server(require_healthy=True):
+        """
+        Select the best available server for a new customer.
+
+        Strategy:
+        1. Filter to active servers
+        2. Optionally filter to healthy servers (recent heartbeat)
+        3. Filter to servers with available capacity
+        4. Sort by current customer count (ascending)
+        5. Return server with lowest load
+
+        Args:
+            require_healthy: If True, only consider servers with recent heartbeat
+
+        Returns:
+            Server object, or None if no suitable server found
+        """
+        servers = Server.get_active()
+
+        if not servers:
+            return None
+
+        # Filter and score servers
+        candidates = []
+        for server in servers:
+            # Skip unhealthy servers if required
+            if require_healthy and not server.is_healthy():
+                continue
+
+            # Skip servers at capacity
+            if not server.has_capacity():
+                continue
+
+            customer_count = server.get_customer_count()
+            candidates.append((server, customer_count))
+
+        if not candidates:
+            # If no healthy servers, try again without health requirement
+            if require_healthy:
+                return ServerSelector.select_server(require_healthy=False)
+            return None
+
+        # Sort by customer count (lowest first) and return best
+        candidates.sort(key=lambda x: x[1])
+        return candidates[0][0]
+
+    @staticmethod
+    def get_server_stats():
+        """Get statistics for all servers"""
+        servers = Server.get_all()
+
+        stats = {
+            'total': len(servers),
+            'active': 0,
+            'maintenance': 0,
+            'offline': 0,
+            'healthy': 0,
+            'total_capacity': 0,
+            'total_customers': 0,
+            'servers': []
+        }
+
+        for server in servers:
+            if server.status == 'active':
+                stats['active'] += 1
+            elif server.status == 'maintenance':
+                stats['maintenance'] += 1
+            else:
+                stats['offline'] += 1
+
+            if server.is_healthy():
+                stats['healthy'] += 1
+
+            customer_count = server.get_customer_count()
+            stats['total_capacity'] += server.max_customers
+            stats['total_customers'] += customer_count
+
+            stats['servers'].append({
+                'id': server.id,
+                'name': server.name,
+                'status': server.status,
+                'is_healthy': server.is_healthy(),
+                'customer_count': customer_count,
+                'max_customers': server.max_customers,
+                'utilization': round(customer_count / server.max_customers * 100, 1) if server.max_customers > 0 else 0
+            })
+
+        return stats
+
+
+# =============================================================================
+# Monitoring Models
+# =============================================================================
+
+class MonitoringCheck:
+    """Individual monitoring check result"""
+
+    def __init__(self, id=None, customer_id=None, check_type=None, status=None,
+                 response_time_ms=None, details=None, checked_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.check_type = check_type
+        self.status = status
+        self.response_time_ms = response_time_ms
+        self.details = details if details else {}
+        self.checked_at = checked_at or datetime.now()
+
+    def save(self):
+        """Store check result in database"""
+        import json
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            details_json = json.dumps(self.details) if self.details else None
+            cursor.execute("""
+                INSERT INTO monitoring_checks
+                (customer_id, check_type, status, response_time_ms, details, checked_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (
+                self.customer_id, self.check_type, self.status,
+                self.response_time_ms, details_json, self.checked_at
+            ))
+            self.id = cursor.lastrowid
+            conn.commit()
+            return self
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_recent_by_customer(customer_id, hours=24):
+        """Get recent checks for a customer"""
+        import json
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("""
+                SELECT * FROM monitoring_checks
+                WHERE customer_id = %s AND checked_at > DATE_SUB(NOW(), INTERVAL %s HOUR)
+                ORDER BY checked_at DESC
+            """, (customer_id, hours))
+            rows = cursor.fetchall()
+            checks = []
+            for row in rows:
+                if row.get('details') and isinstance(row['details'], str):
+                    row['details'] = json.loads(row['details'])
+                checks.append(MonitoringCheck(**row))
+            return checks
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def cleanup_old_checks(hours=48):
+        """Delete checks older than specified hours"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                DELETE FROM monitoring_checks
+                WHERE checked_at < DATE_SUB(NOW(), INTERVAL %s HOUR)
+            """, (hours,))
+            deleted = cursor.rowcount
+            conn.commit()
+            return deleted
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<MonitoringCheck {self.id}: {self.customer_id} {self.check_type}={self.status}>"
+
+
+class CustomerMonitoringStatus:
+    """Current monitoring status for a customer (one row per customer)"""
+
+    def __init__(self, customer_id=None, http_status='unknown', container_status='unknown',
+                 last_http_check=None, last_container_check=None, last_http_response_ms=None,
+                 cpu_percent=None, memory_percent=None, memory_usage_mb=None, disk_usage_mb=None,
+                 uptime_24h=0.00, consecutive_failures=0, last_state_change=None,
+                 last_alert_sent=None, updated_at=None):
+        self.customer_id = customer_id
+        self.http_status = http_status
+        self.container_status = container_status
+        self.last_http_check = last_http_check
+        self.last_container_check = last_container_check
+        self.last_http_response_ms = last_http_response_ms
+        self.cpu_percent = cpu_percent
+        self.memory_percent = memory_percent
+        self.memory_usage_mb = memory_usage_mb
+        self.disk_usage_mb = disk_usage_mb
+        self.uptime_24h = uptime_24h
+        self.consecutive_failures = consecutive_failures
+        self.last_state_change = last_state_change
+        self.last_alert_sent = last_alert_sent
+        self.updated_at = updated_at
+
+    @staticmethod
+    def get_or_create(customer_id):
+        """Get existing status or create new one"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_monitoring_status WHERE customer_id = %s
+            """, (customer_id,))
+            row = cursor.fetchone()
+
+            if row:
+                return CustomerMonitoringStatus(**row)
+
+            # Create new status record
+            cursor.execute("""
+                INSERT INTO customer_monitoring_status (customer_id) VALUES (%s)
+            """, (customer_id,))
+            conn.commit()
+
+            return CustomerMonitoringStatus(customer_id=customer_id)
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update_http_status(self, status, response_time_ms=None):
+        """Update HTTP check status"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Track state changes
+            state_change_sql = ""
+            if status != self.http_status:
+                state_change_sql = ", last_state_change = NOW()"
+
+            cursor.execute(f"""
+                UPDATE customer_monitoring_status
+                SET http_status = %s, last_http_check = NOW(), last_http_response_ms = %s{state_change_sql}
+                WHERE customer_id = %s
+            """, (status, response_time_ms, self.customer_id))
+            conn.commit()
+
+            self.http_status = status
+            self.last_http_response_ms = response_time_ms
+            self.last_http_check = datetime.now()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update_container_status(self, status, cpu_percent=None, memory_mb=None, disk_mb=None):
+        """Update container and resource metrics"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                UPDATE customer_monitoring_status
+                SET container_status = %s, last_container_check = NOW(),
+                    cpu_percent = %s, memory_usage_mb = %s, disk_usage_mb = %s
+                WHERE customer_id = %s
+            """, (status, cpu_percent, memory_mb, disk_mb, self.customer_id))
+            conn.commit()
+
+            self.container_status = status
+            self.cpu_percent = cpu_percent
+            self.memory_usage_mb = memory_mb
+            self.disk_usage_mb = disk_mb
+            self.last_container_check = datetime.now()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def calculate_uptime_24h(self):
+        """Calculate uptime percentage from last 24h of checks"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("""
+                SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) as up_count
+                FROM monitoring_checks
+                WHERE customer_id = %s
+                    AND check_type = 'http'
+                    AND checked_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+            """, (self.customer_id,))
+            row = cursor.fetchone()
+
+            if row and row['total'] > 0:
+                uptime = (row['up_count'] / row['total']) * 100
+            else:
+                uptime = 0.0
+
+            # Update the stored uptime
+            cursor.execute("""
+                UPDATE customer_monitoring_status SET uptime_24h = %s WHERE customer_id = %s
+            """, (uptime, self.customer_id))
+            conn.commit()
+
+            self.uptime_24h = uptime
+            return uptime
+        finally:
+            cursor.close()
+            conn.close()
+
+    def increment_failures(self):
+        """Increment consecutive failure count"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                UPDATE customer_monitoring_status
+                SET consecutive_failures = consecutive_failures + 1
+                WHERE customer_id = %s
+            """, (self.customer_id,))
+            conn.commit()
+            self.consecutive_failures += 1
+        finally:
+            cursor.close()
+            conn.close()
+
+    def reset_failures(self):
+        """Reset consecutive failure count"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                UPDATE customer_monitoring_status
+                SET consecutive_failures = 0
+                WHERE customer_id = %s
+            """, (self.customer_id,))
+            conn.commit()
+            self.consecutive_failures = 0
+        finally:
+            cursor.close()
+            conn.close()
+
+    def should_alert(self, threshold=3, cooldown_seconds=300):
+        """Check if alert should be sent (threshold failures, cooldown period)"""
+        if self.consecutive_failures < threshold:
+            return False
+
+        if self.last_alert_sent:
+            elapsed = (datetime.now() - self.last_alert_sent).total_seconds()
+            if elapsed < cooldown_seconds:
+                return False
+
+        return True
+
+    def mark_alert_sent(self):
+        """Update last_alert_sent timestamp"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                UPDATE customer_monitoring_status
+                SET last_alert_sent = NOW()
+                WHERE customer_id = %s
+            """, (self.customer_id,))
+            conn.commit()
+            self.last_alert_sent = datetime.now()
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_all_statuses():
+        """Get all customer monitoring statuses with customer info"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("""
+                SELECT cms.*, c.email, c.domain, c.company_name, c.status as customer_status
+                FROM customer_monitoring_status cms
+                JOIN customers c ON cms.customer_id = c.id
+                WHERE c.status = 'active'
+                ORDER BY
+                    CASE cms.http_status
+                        WHEN 'down' THEN 1
+                        WHEN 'degraded' THEN 2
+                        WHEN 'unknown' THEN 3
+                        ELSE 4
+                    END,
+                    c.domain
+            """)
+            return cursor.fetchall()
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_summary_stats():
+        """Get aggregate monitoring statistics"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("""
+                SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN http_status = 'up' AND container_status = 'up' THEN 1 ELSE 0 END) as up,
+                    SUM(CASE WHEN http_status = 'down' OR container_status = 'down' THEN 1 ELSE 0 END) as down,
+                    SUM(CASE WHEN http_status = 'degraded' OR container_status = 'degraded' THEN 1 ELSE 0 END) as degraded,
+                    SUM(CASE WHEN http_status = 'unknown' OR container_status = 'unknown' THEN 1 ELSE 0 END) as unknown,
+                    AVG(uptime_24h) as avg_uptime,
+                    AVG(last_http_response_ms) as avg_response_time
+                FROM customer_monitoring_status cms
+                JOIN customers c ON cms.customer_id = c.id
+                WHERE c.status = 'active'
+            """)
+            row = cursor.fetchone()
+            return {
+                'total': row['total'] or 0,
+                'up': row['up'] or 0,
+                'down': row['down'] or 0,
+                'degraded': row['degraded'] or 0,
+                'unknown': row['unknown'] or 0,
+                'avg_uptime': round(row['avg_uptime'] or 0, 2),
+                'avg_response_time': int(row['avg_response_time'] or 0)
+            }
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_down_count():
+        """Get count of customers with down status"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) FROM customer_monitoring_status cms
+                JOIN customers c ON cms.customer_id = c.id
+                WHERE c.status = 'active'
+                AND (cms.http_status = 'down' OR cms.container_status = 'down')
+            """)
+            return cursor.fetchone()[0]
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<CustomerMonitoringStatus {self.customer_id}: http={self.http_status}>"
+
+
+class MonitoringAlert:
+    """Alert record for monitoring events"""
+
+    def __init__(self, id=None, customer_id=None, alert_type=None, message=None,
+                 details=None, email_sent=False, acknowledged=False,
+                 acknowledged_by=None, acknowledged_at=None, created_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.alert_type = alert_type
+        self.message = message
+        self.details = details if details else {}
+        self.email_sent = email_sent
+        self.acknowledged = acknowledged
+        self.acknowledged_by = acknowledged_by
+        self.acknowledged_at = acknowledged_at
+        self.created_at = created_at or datetime.now()
+
+    def save(self):
+        """Create alert record"""
+        import json
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            details_json = json.dumps(self.details) if self.details else None
+            cursor.execute("""
+                INSERT INTO monitoring_alerts
+                (customer_id, alert_type, message, details, created_at)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (
+                self.customer_id, self.alert_type, self.message,
+                details_json, self.created_at
+            ))
+            self.id = cursor.lastrowid
+            conn.commit()
+            return self
+        finally:
+            cursor.close()
+            conn.close()
+
+    def mark_email_sent(self):
+        """Mark alert as email sent"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                UPDATE monitoring_alerts SET email_sent = TRUE WHERE id = %s
+            """, (self.id,))
+            conn.commit()
+            self.email_sent = True
+        finally:
+            cursor.close()
+            conn.close()
+
+    def acknowledge(self, admin_id):
+        """Mark alert as acknowledged"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                UPDATE monitoring_alerts
+                SET acknowledged = TRUE, acknowledged_by = %s, acknowledged_at = NOW()
+                WHERE id = %s
+            """, (admin_id, self.id))
+            conn.commit()
+            self.acknowledged = True
+            self.acknowledged_by = admin_id
+            self.acknowledged_at = datetime.now()
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_id(alert_id):
+        """Get alert by ID"""
+        import json
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("SELECT * FROM monitoring_alerts WHERE id = %s", (alert_id,))
+            row = cursor.fetchone()
+            if row:
+                if row.get('details') and isinstance(row['details'], str):
+                    row['details'] = json.loads(row['details'])
+                return MonitoringAlert(**row)
+            return None
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_unacknowledged(limit=50):
+        """Get unacknowledged alerts"""
+        import json
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("""
+                SELECT ma.*, c.email, c.domain, c.company_name
+                FROM monitoring_alerts ma
+                JOIN customers c ON ma.customer_id = c.id
+                WHERE ma.acknowledged = FALSE
+                ORDER BY ma.created_at DESC
+                LIMIT %s
+            """, (limit,))
+            rows = cursor.fetchall()
+            for row in rows:
+                if row.get('details') and isinstance(row['details'], str):
+                    row['details'] = json.loads(row['details'])
+            return rows
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_recent(limit=50, offset=0):
+        """Get recent alerts with pagination"""
+        import json
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("""
+                SELECT ma.*, c.email, c.domain, c.company_name
+                FROM monitoring_alerts ma
+                JOIN customers c ON ma.customer_id = c.id
+                ORDER BY ma.created_at DESC
+                LIMIT %s OFFSET %s
+            """, (limit, offset))
+            rows = cursor.fetchall()
+            for row in rows:
+                if row.get('details') and isinstance(row['details'], str):
+                    row['details'] = json.loads(row['details'])
+            return rows
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_customer(customer_id, limit=20):
+        """Get alerts for a specific customer"""
+        import json
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        try:
+            cursor.execute("""
+                SELECT * FROM monitoring_alerts
+                WHERE customer_id = %s
+                ORDER BY created_at DESC
+                LIMIT %s
+            """, (customer_id, limit))
+            rows = cursor.fetchall()
+            alerts = []
+            for row in rows:
+                if row.get('details') and isinstance(row['details'], str):
+                    row['details'] = json.loads(row['details'])
+                alerts.append(MonitoringAlert(**row))
+            return alerts
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_unacknowledged_count():
+        """Get count of unacknowledged alerts"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT COUNT(*) FROM monitoring_alerts WHERE acknowledged = FALSE
+            """)
+            return cursor.fetchone()[0]
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<MonitoringAlert {self.id}: {self.alert_type} for customer {self.customer_id}>"
+
+
+class Customer2FASettings:
+    """Two-factor authentication settings for a customer"""
+    def __init__(self, id=None, customer_id=None, totp_secret=None, is_enabled=False,
+                 backup_codes=None, backup_codes_remaining=10, last_used_at=None,
+                 created_at=None, updated_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.totp_secret = totp_secret
+        self.is_enabled = is_enabled
+        self.backup_codes = backup_codes  # JSON string of hashed backup codes
+        self.backup_codes_remaining = backup_codes_remaining
+        self.last_used_at = last_used_at
+        self.created_at = created_at
+        self.updated_at = updated_at
+
+    @staticmethod
+    def get_by_customer(customer_id):
+        """Get 2FA settings for a customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_2fa_settings WHERE customer_id = %s
+            """, (customer_id,))
+            row = cursor.fetchone()
+            if row:
+                return Customer2FASettings(**row)
+            return None
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def create(customer_id, totp_secret):
+        """Create 2FA settings for a customer (not yet enabled)"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO customer_2fa_settings (customer_id, totp_secret, is_enabled)
+                VALUES (%s, %s, FALSE)
+                ON DUPLICATE KEY UPDATE totp_secret = VALUES(totp_secret), is_enabled = FALSE
+            """, (customer_id, totp_secret))
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            cursor.close()
+            conn.close()
+
+    def enable(self, backup_codes_json):
+        """Enable 2FA and set backup codes"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE customer_2fa_settings
+                SET is_enabled = TRUE, backup_codes = %s, backup_codes_remaining = 10
+                WHERE customer_id = %s
+            """, (backup_codes_json, self.customer_id))
+            conn.commit()
+            self.is_enabled = True
+            self.backup_codes = backup_codes_json
+            self.backup_codes_remaining = 10
+        finally:
+            cursor.close()
+            conn.close()
+
+    def disable(self):
+        """Disable 2FA"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE customer_2fa_settings
+                SET is_enabled = FALSE, totp_secret = NULL, backup_codes = NULL, backup_codes_remaining = 0
+                WHERE customer_id = %s
+            """, (self.customer_id,))
+            conn.commit()
+            self.is_enabled = False
+            self.totp_secret = None
+            self.backup_codes = None
+            self.backup_codes_remaining = 0
+        finally:
+            cursor.close()
+            conn.close()
+
+    def use_backup_code(self, used_code_hash):
+        """Mark a backup code as used by removing it from the list"""
+        import json
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            # Remove used code from backup codes
+            codes = json.loads(self.backup_codes) if self.backup_codes else []
+            codes = [c for c in codes if c != used_code_hash]
+            new_codes_json = json.dumps(codes)
+
+            cursor.execute("""
+                UPDATE customer_2fa_settings
+                SET backup_codes = %s, backup_codes_remaining = %s, last_used_at = NOW()
+                WHERE customer_id = %s
+            """, (new_codes_json, len(codes), self.customer_id))
+            conn.commit()
+            self.backup_codes = new_codes_json
+            self.backup_codes_remaining = len(codes)
+        finally:
+            cursor.close()
+            conn.close()
+
+    def regenerate_backup_codes(self, new_codes_json):
+        """Regenerate backup codes"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE customer_2fa_settings
+                SET backup_codes = %s, backup_codes_remaining = 10
+                WHERE customer_id = %s
+            """, (new_codes_json, self.customer_id))
+            conn.commit()
+            self.backup_codes = new_codes_json
+            self.backup_codes_remaining = 10
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update_last_used(self):
+        """Update the last used timestamp"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE customer_2fa_settings SET last_used_at = NOW() WHERE customer_id = %s
+            """, (self.customer_id,))
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<Customer2FASettings customer_id={self.customer_id} enabled={self.is_enabled}>"
+
+
+class CustomerLoginHistory:
+    """Login history for audit trail and session display"""
+    def __init__(self, id=None, customer_id=None, ip_address=None, user_agent=None,
+                 location=None, success=True, failure_reason=None, session_id=None,
+                 created_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.ip_address = ip_address
+        self.user_agent = user_agent
+        self.location = location
+        self.success = success
+        self.failure_reason = failure_reason
+        self.session_id = session_id
+        self.created_at = created_at
+
+    @staticmethod
+    def create(customer_id, ip_address, user_agent, location=None, success=True,
+               failure_reason=None, session_id=None):
+        """Record a login attempt"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO customer_login_history
+                (customer_id, ip_address, user_agent, location, success, failure_reason, session_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (customer_id, ip_address, user_agent[:500] if user_agent else None,
+                  location, success, failure_reason, session_id))
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_customer(customer_id, limit=20, include_failed=True):
+        """Get login history for a customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            if include_failed:
+                cursor.execute("""
+                    SELECT * FROM customer_login_history
+                    WHERE customer_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                """, (customer_id, limit))
+            else:
+                cursor.execute("""
+                    SELECT * FROM customer_login_history
+                    WHERE customer_id = %s AND success = TRUE
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                """, (customer_id, limit))
+
+            rows = cursor.fetchall()
+            return [CustomerLoginHistory(**row) for row in rows]
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_active_sessions(customer_id, current_session_id=None):
+        """Get active sessions (recent successful logins with unique session IDs)"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_login_history
+                WHERE customer_id = %s AND success = TRUE AND session_id IS NOT NULL
+                AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
+                ORDER BY created_at DESC
+            """, (customer_id,))
+
+            rows = cursor.fetchall()
+            # Deduplicate by session_id, keeping the most recent entry for each
+            seen_sessions = set()
+            sessions = []
+            for row in rows:
+                if row['session_id'] not in seen_sessions:
+                    seen_sessions.add(row['session_id'])
+                    entry = CustomerLoginHistory(**row)
+                    entry.is_current = (row['session_id'] == current_session_id)
+                    sessions.append(entry)
+            return sessions
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def invalidate_all_sessions(customer_id, except_session_id=None):
+        """Mark all sessions as logged out (for logout-all functionality)"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            if except_session_id:
+                cursor.execute("""
+                    UPDATE customer_login_history
+                    SET session_id = NULL
+                    WHERE customer_id = %s AND session_id != %s
+                """, (customer_id, except_session_id))
+            else:
+                cursor.execute("""
+                    UPDATE customer_login_history
+                    SET session_id = NULL
+                    WHERE customer_id = %s
+                """, (customer_id,))
+            conn.commit()
+            return cursor.rowcount
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        status = "success" if self.success else "failed"
+        return f"<CustomerLoginHistory {self.id}: {status} for customer {self.customer_id}>"
+
+
+class CustomerVerificationToken:
+    """Verification tokens for 2FA email recovery and other verification needs"""
+    TOKEN_TYPES = ('2fa_recovery', 'email_change', 'password_reset')
+
+    def __init__(self, id=None, customer_id=None, token=None, token_type=None,
+                 new_value=None, expires_at=None, used_at=None, created_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.token = token
+        self.token_type = token_type
+        self.new_value = new_value  # For email_change, stores the new email
+        self.expires_at = expires_at
+        self.used_at = used_at
+        self.created_at = created_at
+
+    @staticmethod
+    def create(customer_id, token, token_type, expires_minutes=15, new_value=None):
+        """Create a new verification token"""
+        if token_type not in CustomerVerificationToken.TOKEN_TYPES:
+            raise ValueError(f"Invalid token type: {token_type}")
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            # Invalidate any existing tokens of the same type for this customer
+            cursor.execute("""
+                DELETE FROM customer_verification_tokens
+                WHERE customer_id = %s AND token_type = %s AND used_at IS NULL
+            """, (customer_id, token_type))
+
+            # Create new token
+            cursor.execute("""
+                INSERT INTO customer_verification_tokens
+                (customer_id, token, token_type, new_value, expires_at)
+                VALUES (%s, %s, %s, %s, DATE_ADD(NOW(), INTERVAL %s MINUTE))
+            """, (customer_id, token, token_type, new_value, expires_minutes))
+            conn.commit()
+            return cursor.lastrowid
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def verify(token, token_type):
+        """Verify a token and return the associated record if valid"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_verification_tokens
+                WHERE token = %s AND token_type = %s
+                AND used_at IS NULL AND expires_at > NOW()
+            """, (token, token_type))
+            row = cursor.fetchone()
+            if row:
+                return CustomerVerificationToken(**row)
+            return None
+        finally:
+            cursor.close()
+            conn.close()
+
+    def mark_used(self):
+        """Mark token as used"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE customer_verification_tokens SET used_at = NOW() WHERE id = %s
+            """, (self.id,))
+            conn.commit()
+            self.used_at = datetime.now()
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def cleanup_expired():
+        """Delete expired tokens (maintenance task)"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                DELETE FROM customer_verification_tokens
+                WHERE expires_at < NOW() OR used_at IS NOT NULL
+            """)
+            conn.commit()
+            return cursor.rowcount
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<CustomerVerificationToken {self.id}: {self.token_type} for customer {self.customer_id}>"
+
+
+class CustomerNotificationSettings:
+    """Notification preferences for a customer"""
+    def __init__(self, id=None, customer_id=None, email_security_alerts=True,
+                 email_login_alerts=True, email_billing_alerts=True,
+                 email_maintenance_alerts=True, email_marketing=False,
+                 created_at=None, updated_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.email_security_alerts = email_security_alerts
+        self.email_login_alerts = email_login_alerts
+        self.email_billing_alerts = email_billing_alerts
+        self.email_maintenance_alerts = email_maintenance_alerts
+        self.email_marketing = email_marketing
+        self.created_at = created_at
+        self.updated_at = updated_at
+
+    @staticmethod
+    def get_or_create(customer_id):
+        """Get existing settings or create defaults"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_notification_settings WHERE customer_id = %s
+            """, (customer_id,))
+            row = cursor.fetchone()
+            if row:
+                return CustomerNotificationSettings(**row)
+
+            # Create defaults
+            cursor.execute("""
+                INSERT INTO customer_notification_settings (customer_id) VALUES (%s)
+            """, (customer_id,))
+            conn.commit()
+            return CustomerNotificationSettings(id=cursor.lastrowid, customer_id=customer_id)
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update(self, **kwargs):
+        """Update notification settings"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            fields = []
+            values = []
+            for key, value in kwargs.items():
+                if hasattr(self, key):
+                    fields.append(f"{key} = %s")
+                    values.append(value)
+                    setattr(self, key, value)
+
+            if fields:
+                values.append(self.customer_id)
+                cursor.execute(f"""
+                    UPDATE customer_notification_settings
+                    SET {', '.join(fields)}
+                    WHERE customer_id = %s
+                """, values)
+                conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<CustomerNotificationSettings customer_id={self.customer_id}>"
+
+
+class CustomerApiKey:
+    """API key for programmatic access"""
+    def __init__(self, id=None, customer_id=None, name=None, key_prefix=None,
+                 key_hash=None, scopes=None, last_used_at=None, expires_at=None,
+                 is_active=True, created_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.name = name
+        self.key_prefix = key_prefix
+        self.key_hash = key_hash
+        self.scopes = scopes
+        self.last_used_at = last_used_at
+        self.expires_at = expires_at
+        self.is_active = is_active
+        self.created_at = created_at
+
+    @staticmethod
+    def create(customer_id, name, scopes=None, expires_days=None):
+        """Create a new API key, returns (ApiKey, raw_key)"""
+        import secrets
+        import hashlib
+
+        # Generate key: prefix_randompart
+        prefix = secrets.token_hex(4)
+        secret_part = secrets.token_hex(24)
+        raw_key = f"shk_{prefix}_{secret_part}"
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            expires_at = None
+            if expires_days:
+                cursor.execute("SELECT DATE_ADD(NOW(), INTERVAL %s DAY)", (expires_days,))
+                expires_at = cursor.fetchone()[0]
+
+            cursor.execute("""
+                INSERT INTO customer_api_keys
+                (customer_id, name, key_prefix, key_hash, scopes, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (customer_id, name, prefix, key_hash, scopes, expires_at))
+            conn.commit()
+
+            api_key = CustomerApiKey(
+                id=cursor.lastrowid,
+                customer_id=customer_id,
+                name=name,
+                key_prefix=prefix,
+                key_hash=key_hash,
+                scopes=scopes,
+                expires_at=expires_at,
+                is_active=True
+            )
+            return api_key, raw_key
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def verify(raw_key):
+        """Verify an API key and return the associated record"""
+        import hashlib
+        if not raw_key or not raw_key.startswith('shk_'):
+            return None
+
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_api_keys
+                WHERE key_hash = %s AND is_active = TRUE
+                AND (expires_at IS NULL OR expires_at > NOW())
+            """, (key_hash,))
+            row = cursor.fetchone()
+            if row:
+                # Update last used
+                cursor.execute("""
+                    UPDATE customer_api_keys SET last_used_at = NOW() WHERE id = %s
+                """, (row['id'],))
+                conn.commit()
+                return CustomerApiKey(**row)
+            return None
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_customer(customer_id, include_inactive=False):
+        """Get all API keys for a customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            if include_inactive:
+                cursor.execute("""
+                    SELECT * FROM customer_api_keys
+                    WHERE customer_id = %s ORDER BY created_at DESC
+                """, (customer_id,))
+            else:
+                cursor.execute("""
+                    SELECT * FROM customer_api_keys
+                    WHERE customer_id = %s AND is_active = TRUE
+                    ORDER BY created_at DESC
+                """, (customer_id,))
+            return [CustomerApiKey(**row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+            conn.close()
+
+    def revoke(self):
+        """Revoke this API key"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE customer_api_keys SET is_active = FALSE WHERE id = %s
+            """, (self.id,))
+            conn.commit()
+            self.is_active = False
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<CustomerApiKey {self.id}: {self.name} for customer {self.customer_id}>"
+
+
+class CustomerWebhook:
+    """Webhook configuration for event notifications"""
+    VALID_EVENTS = ['backup.completed', 'backup.failed', 'site.down', 'site.up',
+                    'ssl.expiring', 'resource.warning', 'login.new_device']
+
+    def __init__(self, id=None, customer_id=None, name=None, url=None, secret=None,
+                 events=None, is_active=True, failure_count=0, last_triggered_at=None,
+                 last_success_at=None, last_failure_at=None, last_failure_reason=None,
+                 created_at=None, updated_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.name = name
+        self.url = url
+        self.secret = secret
+        self.events = events  # JSON string
+        self.is_active = is_active
+        self.failure_count = failure_count
+        self.last_triggered_at = last_triggered_at
+        self.last_success_at = last_success_at
+        self.last_failure_at = last_failure_at
+        self.last_failure_reason = last_failure_reason
+        self.created_at = created_at
+        self.updated_at = updated_at
+
+    @staticmethod
+    def create(customer_id, name, url, events):
+        """Create a new webhook"""
+        import secrets
+        import json
+
+        secret = secrets.token_hex(32)
+        events_json = json.dumps(events) if isinstance(events, list) else events
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT INTO customer_webhooks
+                (customer_id, name, url, secret, events)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (customer_id, name, url, secret, events_json))
+            conn.commit()
+            return CustomerWebhook(
+                id=cursor.lastrowid,
+                customer_id=customer_id,
+                name=name,
+                url=url,
+                secret=secret,
+                events=events_json,
+                is_active=True
+            )
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_customer(customer_id, include_inactive=False):
+        """Get all webhooks for a customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            if include_inactive:
+                cursor.execute("""
+                    SELECT * FROM customer_webhooks
+                    WHERE customer_id = %s ORDER BY created_at DESC
+                """, (customer_id,))
+            else:
+                cursor.execute("""
+                    SELECT * FROM customer_webhooks
+                    WHERE customer_id = %s AND is_active = TRUE
+                    ORDER BY created_at DESC
+                """, (customer_id,))
+            return [CustomerWebhook(**row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_id(webhook_id):
+        """Get webhook by ID"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("SELECT * FROM customer_webhooks WHERE id = %s", (webhook_id,))
+            row = cursor.fetchone()
+            return CustomerWebhook(**row) if row else None
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update(self, **kwargs):
+        """Update webhook settings"""
+        import json
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            fields = []
+            values = []
+            for key, value in kwargs.items():
+                if hasattr(self, key):
+                    if key == 'events' and isinstance(value, list):
+                        value = json.dumps(value)
+                    fields.append(f"{key} = %s")
+                    values.append(value)
+                    setattr(self, key, value)
+
+            if fields:
+                values.append(self.id)
+                cursor.execute(f"""
+                    UPDATE customer_webhooks
+                    SET {', '.join(fields)}
+                    WHERE id = %s
+                """, values)
+                conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def delete(self):
+        """Delete this webhook"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM customer_webhooks WHERE id = %s", (self.id,))
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def record_trigger(self, success, failure_reason=None):
+        """Record a webhook trigger attempt"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            if success:
+                cursor.execute("""
+                    UPDATE customer_webhooks
+                    SET last_triggered_at = NOW(), last_success_at = NOW(),
+                        failure_count = 0
+                    WHERE id = %s
+                """, (self.id,))
+            else:
+                cursor.execute("""
+                    UPDATE customer_webhooks
+                    SET last_triggered_at = NOW(), last_failure_at = NOW(),
+                        failure_count = failure_count + 1, last_failure_reason = %s
+                    WHERE id = %s
+                """, (failure_reason, self.id))
+            conn.commit()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<CustomerWebhook {self.id}: {self.name} for customer {self.customer_id}>"
+
+
+class CustomerDataExport:
+    """Data export request for GDPR compliance"""
+    def __init__(self, id=None, customer_id=None, status='pending', file_path=None,
+                 file_size_bytes=None, expires_at=None, error_message=None,
+                 requested_at=None, completed_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.status = status
+        self.file_path = file_path
+        self.file_size_bytes = file_size_bytes
+        self.expires_at = expires_at
+        self.error_message = error_message
+        self.requested_at = requested_at
+        self.completed_at = completed_at
+
+    @staticmethod
+    def create(customer_id):
+        """Create a new data export request"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            # Check for existing pending/processing request
+            cursor.execute("""
+                SELECT id FROM customer_data_exports
+                WHERE customer_id = %s AND status IN ('pending', 'processing')
+            """, (customer_id,))
+            if cursor.fetchone():
+                return None  # Already has pending request
+
+            cursor.execute("""
+                INSERT INTO customer_data_exports (customer_id) VALUES (%s)
+            """, (customer_id,))
+            conn.commit()
+            return CustomerDataExport(id=cursor.lastrowid, customer_id=customer_id, status='pending')
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_customer(customer_id, limit=5):
+        """Get recent export requests for a customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_data_exports
+                WHERE customer_id = %s
+                ORDER BY requested_at DESC LIMIT %s
+            """, (customer_id, limit))
+            return [CustomerDataExport(**row) for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_id(export_id):
+        """Get export by ID"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("SELECT * FROM customer_data_exports WHERE id = %s", (export_id,))
+            row = cursor.fetchone()
+            return CustomerDataExport(**row) if row else None
+        finally:
+            cursor.close()
+            conn.close()
+
+    def update_status(self, status, file_path=None, file_size_bytes=None, error_message=None):
+        """Update export status"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            if status == 'completed':
+                cursor.execute("""
+                    UPDATE customer_data_exports
+                    SET status = %s, file_path = %s, file_size_bytes = %s,
+                        completed_at = NOW(), expires_at = DATE_ADD(NOW(), INTERVAL 7 DAY)
+                    WHERE id = %s
+                """, (status, file_path, file_size_bytes, self.id))
+            elif status == 'failed':
+                cursor.execute("""
+                    UPDATE customer_data_exports
+                    SET status = %s, error_message = %s, completed_at = NOW()
+                    WHERE id = %s
+                """, (status, error_message, self.id))
+            else:
+                cursor.execute("""
+                    UPDATE customer_data_exports SET status = %s WHERE id = %s
+                """, (status, self.id))
+            conn.commit()
+            self.status = status
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<CustomerDataExport {self.id}: {self.status} for customer {self.customer_id}>"
+
+
+class CustomerDeletionRequest:
+    """Account deletion request"""
+    def __init__(self, id=None, customer_id=None, reason=None, scheduled_at=None,
+                 cancelled_at=None, executed_at=None, created_at=None):
+        self.id = id
+        self.customer_id = customer_id
+        self.reason = reason
+        self.scheduled_at = scheduled_at
+        self.cancelled_at = cancelled_at
+        self.executed_at = executed_at
+        self.created_at = created_at
+
+    @staticmethod
+    def create(customer_id, reason=None, delay_days=14):
+        """Create a deletion request scheduled for future"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            # Cancel any existing request first
+            cursor.execute("""
+                DELETE FROM customer_deletion_requests
+                WHERE customer_id = %s AND executed_at IS NULL
+            """, (customer_id,))
+
+            cursor.execute("""
+                INSERT INTO customer_deletion_requests
+                (customer_id, reason, scheduled_at)
+                VALUES (%s, %s, DATE_ADD(NOW(), INTERVAL %s DAY))
+            """, (customer_id, reason, delay_days))
+            conn.commit()
+
+            cursor.execute("SELECT scheduled_at FROM customer_deletion_requests WHERE id = %s",
+                          (cursor.lastrowid,))
+            scheduled_at = cursor.fetchone()[0]
+
+            return CustomerDeletionRequest(
+                id=cursor.lastrowid,
+                customer_id=customer_id,
+                reason=reason,
+                scheduled_at=scheduled_at
+            )
+        finally:
+            cursor.close()
+            conn.close()
+
+    @staticmethod
+    def get_by_customer(customer_id):
+        """Get active deletion request for customer"""
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute("""
+                SELECT * FROM customer_deletion_requests
+                WHERE customer_id = %s AND cancelled_at IS NULL AND executed_at IS NULL
+            """, (customer_id,))
+            row = cursor.fetchone()
+            return CustomerDeletionRequest(**row) if row else None
+        finally:
+            cursor.close()
+            conn.close()
+
+    def cancel(self):
+        """Cancel this deletion request"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE customer_deletion_requests
+                SET cancelled_at = NOW() WHERE id = %s
+            """, (self.id,))
+            conn.commit()
+            self.cancelled_at = datetime.now()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def __repr__(self):
+        return f"<CustomerDeletionRequest {self.id} for customer {self.customer_id}>"

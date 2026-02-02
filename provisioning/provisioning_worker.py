@@ -125,12 +125,17 @@ class ProvisioningLogHandler(logging.Handler):
 class ProvisioningWorker:
     """Handles provisioning of new customer containers with Nginx reverse proxy"""
 
-    def __init__(self, base_path=None):
+    def __init__(self, base_path=None, server_id=None):
         # Use environment variable for base path, with fallback
         if base_path is None:
             base_path = os.getenv('CUSTOMERS_BASE_PATH', '/var/customers')
         self.base_path = Path(base_path)
         self.base_path.mkdir(parents=True, exist_ok=True)
+
+        # Server ID for multi-server support
+        self.server_id = server_id or os.getenv('SERVER_ID')
+        if self.server_id:
+            self.server_id = int(self.server_id)
 
         # Database configuration from environment variables
         self.db_config = {
@@ -146,6 +151,29 @@ class ProvisioningWorker:
 
         self.current_job_id = None
         self.current_customer_id = None
+
+        # Send initial heartbeat if server_id is set
+        if self.server_id:
+            self.update_server_heartbeat()
+
+    def update_server_heartbeat(self):
+        """Update server heartbeat timestamp in database"""
+        if not self.server_id:
+            return
+
+        try:
+            conn = self.get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE servers SET last_heartbeat = NOW() WHERE id = %s",
+                (self.server_id,)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+            logger.debug(f"Updated heartbeat for server {self.server_id}")
+        except Exception as e:
+            logger.warning(f"Failed to update server heartbeat: {e}")
     
     def get_db_connection(self):
         """Get database connection"""
@@ -155,8 +183,15 @@ class ProvisioningWorker:
             logger.error(f"Database connection failed: {e}")
             raise ProvisioningError(f"Database connection failed: {e}")
     
-    def update_customer_status(self, customer_id, status, error_message=None):
-        """Update customer provisioning status in database"""
+    def update_customer_status(self, customer_id, status, error_message=None, raise_on_error=False):
+        """Update customer provisioning status in database
+
+        Args:
+            customer_id: Customer ID to update
+            status: New status value
+            error_message: Optional error message
+            raise_on_error: If True, raises ProvisioningError on failure (use for critical updates)
+        """
         try:
             conn = self.get_db_connection()
             cursor = conn.cursor()
@@ -180,9 +215,18 @@ class ProvisioningWorker:
 
         except Exception as e:
             logger.error(f"Failed to update customer status: {e}")
+            if raise_on_error:
+                raise ProvisioningError(f"Failed to update customer status to '{status}': {e}")
 
-    def update_job_status(self, job_id, status, error_message=None):
-        """Update provisioning job status in database"""
+    def update_job_status(self, job_id, status, error_message=None, raise_on_error=False):
+        """Update provisioning job status in database
+
+        Args:
+            job_id: Job ID to update
+            status: New status value ('started', 'finished', 'failed')
+            error_message: Optional error message
+            raise_on_error: If True, raises ProvisioningError on failure (use for critical updates)
+        """
         try:
             conn = self.get_db_connection()
             cursor = conn.cursor()
@@ -214,17 +258,30 @@ class ProvisioningWorker:
 
         except Exception as e:
             logger.error(f"Failed to update job status: {e}")
+            if raise_on_error:
+                raise ProvisioningError(f"Failed to update job status to '{status}': {e}")
     
-    def save_customer_credentials(self, customer_id, credentials):
-        """Save customer credentials to database"""
+    def save_customer_credentials(self, customer_id, credentials, raise_on_error=True):
+        """Save customer credentials to database
+
+        Args:
+            customer_id: Customer ID to update
+            credentials: Dict containing db_name, db_user, db_password, admin_user, admin_password, web_port
+            raise_on_error: If True (default), raises ProvisioningError on failure. This is critical
+                           because without saved credentials, the customer cannot access their site.
+        """
         try:
             conn = self.get_db_connection()
             cursor = conn.cursor()
-            
+
+            server_id = credentials.get('server_id')
+            quota_project_id = credentials.get('quota_project_id')
+
             cursor.execute("""
-                UPDATE customers 
-                SET db_name = %s, db_user = %s, db_password = %s, 
-                    admin_user = %s, admin_password = %s, web_port = %s
+                UPDATE customers
+                SET db_name = %s, db_user = %s, db_password = %s,
+                    admin_user = %s, admin_password = %s, web_port = %s,
+                    server_id = %s, quota_project_id = %s
                 WHERE id = %s
             """, (
                 credentials['db_name'],
@@ -233,17 +290,21 @@ class ProvisioningWorker:
                 credentials['admin_user'],
                 credentials['admin_password'],
                 credentials['web_port'],
+                server_id,
+                quota_project_id,
                 customer_id
             ))
-            
+
             conn.commit()
             cursor.close()
             conn.close()
-            
+
             logger.info(f"Saved credentials for customer {customer_id}")
-            
+
         except Exception as e:
             logger.error(f"Failed to save credentials: {e}")
+            if raise_on_error:
+                raise ProvisioningError(f"Failed to save customer credentials: {e}")
     
     def generate_password(self, length=16):
         """Generate a secure random password"""
@@ -305,7 +366,45 @@ class ProvisioningWorker:
         except Exception as e:
             logger.error(f"Failed to create directory for {customer_id}: {e}")
             raise ProvisioningError(f"Directory creation failed: {e}")
-    
+
+    def setup_disk_quota(self, customer_id, disk_limit_gb):
+        """Set up ext4 project quota for customer directory"""
+        customer_path = self.base_path / f"customer-{customer_id}"
+        project_id = 1000 + customer_id  # Offset to avoid conflicts
+
+        try:
+            # Check if quotas are enabled
+            check = subprocess.run(['sudo', 'quotaon', '-p', '/'], capture_output=True, text=True)
+            if 'project quota' not in check.stdout.lower() and 'project quota' not in check.stderr.lower():
+                logger.warning("Project quotas not enabled on filesystem, skipping quota setup")
+                return None
+
+            # Assign project ID to directory
+            subprocess.run(
+                ['sudo', 'chattr', '+P', '-p', str(project_id), str(customer_path)],
+                check=True, capture_output=True, timeout=30
+            )
+
+            # Set quota (soft=hard for strict enforcement)
+            limit_kb = disk_limit_gb * 1024 * 1024
+            subprocess.run(
+                ['sudo', 'setquota', '-P', str(project_id),
+                 str(limit_kb), str(limit_kb),  # soft, hard block limits
+                 '0', '0',  # no inode limits
+                 '/'],
+                check=True, capture_output=True, timeout=30
+            )
+
+            logger.info(f"Set disk quota {disk_limit_gb}GB for customer {customer_id} (project {project_id})")
+            return project_id
+
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Failed to set quota for customer {customer_id}: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"Quota setup error for customer {customer_id}: {e}")
+            return None
+
     def generate_docker_compose(self, customer_path, config):
         """Generate docker-compose.yml from template"""
         
@@ -642,13 +741,134 @@ class ProvisioningWorker:
                 
                 commands = []
             elif config['platform'] == 'magento':
-                # Magento is pre-installed in the image via environment variables
-                # Wait a bit more for PHP-FPM to be ready, then verify
-                logger.info("Waiting for Magento to initialize...")
-                time.sleep(15)
-                commands = [
-                    f"docker exec {container_name} php -v"  # Simple health check
-                ]
+                # Magento requires explicit installation via setup:install
+                logger.info("Installing Magento...")
+
+                db_container = f"customer-{config['customer_id']}-db"
+
+                # Get database root password for MySQL configuration
+                db_root_pw_result = subprocess.run(
+                    f"docker exec {db_container} printenv MYSQL_ROOT_PASSWORD",
+                    shell=True, capture_output=True, text=True, timeout=10
+                )
+                db_root_password = db_root_pw_result.stdout.strip()
+
+                # Enable log_bin_trust_function_creators for trigger creation
+                # (Required because customer DB user lacks SUPER privilege)
+                logger.info("Configuring MySQL for Magento triggers...")
+                mysql_config = subprocess.run(
+                    f"docker exec {db_container} mysql -uroot -p'{db_root_password}' -e \"SET GLOBAL log_bin_trust_function_creators = 1;\"",
+                    shell=True, capture_output=True, text=True, timeout=30
+                )
+                if mysql_config.returncode != 0:
+                    logger.warning(f"MySQL config warning: {mysql_config.stderr}")
+
+                # Wait for Elasticsearch to be healthy
+                logger.info("Waiting for Elasticsearch...")
+                es_container = f"customer-{config['customer_id']}-elasticsearch"
+                for attempt in range(30):
+                    es_check = subprocess.run(
+                        f"docker exec {es_container} curl -s http://localhost:9200/_cluster/health",
+                        shell=True, capture_output=True, text=True, timeout=10
+                    )
+                    if es_check.returncode == 0 and '"status"' in es_check.stdout:
+                        logger.info("Elasticsearch is ready")
+                        break
+                    time.sleep(5)
+
+                # Create simple password for installation (avoid special character issues)
+                import random
+                import string
+                simple_password = 'Admin' + ''.join(random.choices(string.digits, k=6))
+
+                # Run Magento setup:install
+                install_script = f'''#!/bin/bash
+cd /var/www/html
+rm -rf generated/* var/cache/* var/page_cache/* app/etc/env.php 2>/dev/null || true
+bin/magento setup:install \\
+  --base-url=https://{config['domain']}/ \\
+  --db-host=db \\
+  --db-name={config['db_name']} \\
+  --db-user={config['db_user']} \\
+  --db-password='{config['db_password']}' \\
+  --admin-firstname=Admin \\
+  --admin-lastname=User \\
+  --admin-email={config['email']} \\
+  --admin-user={config['admin_user']} \\
+  --admin-password='{simple_password}' \\
+  --language=en_US \\
+  --currency=USD \\
+  --timezone=America/Chicago \\
+  --use-rewrites=1 \\
+  --search-engine=opensearch \\
+  --opensearch-host=elasticsearch \\
+  --opensearch-port=9200 \\
+  --cleanup-database
+'''
+
+                logger.info("Running Magento setup:install...")
+                install_result = subprocess.run(
+                    f"echo '{install_script}' | docker exec -i {container_name} bash -",
+                    shell=True, capture_output=True, text=True, timeout=900  # 15 min timeout
+                )
+
+                if install_result.returncode != 0 or 'ERROR' in install_result.stderr:
+                    error_msg = install_result.stderr or install_result.stdout
+                    logger.error(f"Magento install failed: {error_msg[-500:]}")
+                    raise ProvisioningError(f"Magento installation failed: {error_msg[-200:]}")
+
+                logger.info("Magento base installation complete")
+
+                # Run DI compile with increased memory
+                logger.info("Compiling Magento DI...")
+                compile_result = subprocess.run(
+                    f"docker exec {container_name} php -d memory_limit=2G bin/magento setup:di:compile",
+                    shell=True, capture_output=True, text=True, timeout=600
+                )
+                if compile_result.returncode != 0:
+                    logger.warning(f"DI compile warning: {compile_result.stderr[-200:]}")
+
+                # Deploy static content
+                logger.info("Deploying Magento static content...")
+                static_result = subprocess.run(
+                    f"docker exec {container_name} php -d memory_limit=2G bin/magento setup:static-content:deploy -f",
+                    shell=True, capture_output=True, text=True, timeout=600
+                )
+                if static_result.returncode != 0:
+                    logger.warning(f"Static content warning: {static_result.stderr[-200:]}")
+
+                # Fix permissions
+                logger.info("Fixing Magento file permissions...")
+                subprocess.run(
+                    f"docker exec {container_name} chown -R www-data:www-data /var/www/html/generated /var/www/html/var",
+                    shell=True, capture_output=True, text=True, timeout=120
+                )
+                subprocess.run(
+                    f"docker exec {container_name} chmod -R 755 /var/www/html/generated /var/www/html/var",
+                    shell=True, capture_output=True, text=True, timeout=120
+                )
+
+                # Flush cache
+                subprocess.run(
+                    f"docker exec {container_name} bin/magento cache:flush",
+                    shell=True, capture_output=True, text=True, timeout=60
+                )
+
+                # Update customer record with the simple password we used
+                try:
+                    conn = self.get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("UPDATE customers SET admin_password = %s WHERE id = %s",
+                                   (simple_password, config['customer_id']))
+                    conn.commit()
+                    cursor.close()
+                    conn.close()
+                    config['admin_password'] = simple_password  # Update for welcome email
+                except Exception as db_err:
+                    logger.warning(f"Could not update admin password in DB: {db_err}")
+
+                logger.info("Magento installation complete")
+                commands = []
 
             # Final check before running commands
             final_check = subprocess.run(
@@ -887,11 +1107,19 @@ class ProvisioningWorker:
                 'db_root_password': self.generate_password(),
                 'container_prefix': f"customer-{customer_id}",
                 'web_port': job_data['web_port'],
+                'server_id': job_data.get('server_id') or self.server_id,
                 'memory_limit': job_data.get('memory_limit', '1g'),
                 'cpu_limit': job_data.get('cpu_limit', '1.0')
             }
 
             logger.info(f"Generated configuration for customer {customer_id}")
+
+            # Set up disk quota
+            disk_limit_gb = job_data.get('disk_limit_gb', 25)
+            project_id = self.setup_disk_quota(customer_id, disk_limit_gb)
+            if project_id:
+                config['quota_project_id'] = project_id
+
             self.generate_docker_compose(customer_path, config)
 
             if self.is_port_in_use(config['web_port']):
@@ -921,10 +1149,11 @@ class ProvisioningWorker:
             self.setup_backup_cron(customer_id, customer_path)
             
             logger.info(f"Provisioning completed successfully for customer {customer_id}")
-            self.update_customer_status(customer_id, 'active')
+            # Critical: These MUST succeed for provisioning to be considered complete
+            self.update_customer_status(customer_id, 'active', raise_on_error=True)
 
             if rq_job_id:
-                self.update_job_status(rq_job_id, 'finished')
+                self.update_job_status(rq_job_id, 'finished', raise_on_error=True)
 
             return {
                 'status': 'success',
@@ -978,18 +1207,78 @@ def provision_customer_job(job_data):
     current_job = get_current_job()
     rq_job_id = current_job.id if current_job else None
 
-    worker = ProvisioningWorker()
+    # Get server_id from job data or environment
+    server_id = job_data.get('server_id') or os.getenv('SERVER_ID')
+
+    worker = ProvisioningWorker(server_id=server_id)
+
+    # Update heartbeat at start of job
+    worker.update_server_heartbeat()
+
     return worker.provision_customer(job_data, rq_job_id=rq_job_id)
+
+
+def start_heartbeat_thread(server_id, interval=30):
+    """Start a background thread that sends periodic heartbeats"""
+    import threading
+
+    def heartbeat_loop():
+        import mysql.connector
+        db_config = {
+            'host': os.getenv('DB_HOST', 'localhost'),
+            'user': os.getenv('DB_USER', 'shophosting_app'),
+            'password': os.getenv('DB_PASSWORD', ''),
+            'database': os.getenv('DB_NAME', 'shophosting_db')
+        }
+
+        while True:
+            try:
+                conn = mysql.connector.connect(**db_config)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE servers SET last_heartbeat = NOW() WHERE id = %s",
+                    (server_id,)
+                )
+                conn.commit()
+                cursor.close()
+                conn.close()
+                logger.debug(f"Heartbeat sent for server {server_id}")
+            except Exception as e:
+                logger.warning(f"Heartbeat failed: {e}")
+
+            import time
+            time.sleep(interval)
+
+    thread = threading.Thread(target=heartbeat_loop, daemon=True)
+    thread.start()
+    logger.info(f"Started heartbeat thread for server {server_id} (interval: {interval}s)")
+    return thread
 
 
 if __name__ == '__main__':
     # Start the worker with configuration from environment variables
     redis_host = os.getenv('REDIS_HOST', 'localhost')
     redis_port = int(os.getenv('REDIS_PORT', 6379))
+    server_id = os.getenv('SERVER_ID')
 
     redis_conn = redis.Redis(host=redis_host, port=redis_port, db=0)
 
-    # Removed Connection context manager as it's no longer supported
-    worker = Worker(['provisioning'], connection=redis_conn)
-    logger.info(f"ShopHosting.io Provisioning worker started (Redis: {redis_host}:{redis_port})")
+    # Build queue list based on server configuration
+    queues = ['staging']  # Always listen to staging queue
+
+    if server_id:
+        # Multi-server mode: listen to server-specific queue
+        server_queue = f"provisioning:server-{server_id}"
+        queues.insert(0, server_queue)
+        logger.info(f"Multi-server mode: Server ID {server_id}")
+
+        # Start heartbeat thread
+        start_heartbeat_thread(int(server_id))
+    else:
+        # Single-server mode: listen to default provisioning queue
+        queues.insert(0, 'provisioning')
+        logger.info("Single-server mode (no SERVER_ID set)")
+
+    worker = Worker(queues, connection=redis_conn)
+    logger.info(f"ShopHosting.io Provisioning worker started (Redis: {redis_host}:{redis_port}, queues: {', '.join(queues)})")
     worker.work()

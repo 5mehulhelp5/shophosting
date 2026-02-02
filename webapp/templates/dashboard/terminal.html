@@ -1,0 +1,528 @@
+{% extends "dashboard/base_dashboard.html" %}
+
+{% block page_title %}Terminal{% endblock %}
+
+{% block dashboard_css %}
+<style>
+    /* Terminal container styling */
+    .terminal-wrapper {
+        background: #0d1117;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 0;
+        height: 500px;
+        overflow: hidden;
+    }
+
+    .terminal-header {
+        background: #161b22;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .terminal-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+    }
+
+    .terminal-title svg {
+        width: 16px;
+        height: 16px;
+        color: var(--accent-cyan);
+    }
+
+    .terminal-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--success);
+    }
+
+    .status-dot.disconnected {
+        background: var(--error);
+    }
+
+    .status-dot.connecting {
+        background: var(--warning);
+        animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    #terminal-container {
+        height: calc(100% - 48px);
+    }
+
+    /* Override xterm styles to match theme */
+    .xterm {
+        padding: 12px;
+    }
+
+    /* Help panel styling */
+    .help-panel {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-lg);
+        padding: 20px 24px;
+        margin-top: 20px;
+    }
+
+    .help-section {
+        margin-bottom: 20px;
+    }
+
+    .help-section:last-child {
+        margin-bottom: 0;
+    }
+
+    .help-section h4 {
+        color: var(--text-primary);
+        margin-bottom: 12px;
+        font-size: 0.95rem;
+        font-weight: 600;
+    }
+
+    .command-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .command-tag {
+        background: var(--bg-hover);
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+        font-size: 0.8rem;
+        color: var(--accent-cyan);
+        border: 1px solid var(--border-subtle);
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .command-tag:hover {
+        background: var(--bg-active);
+        border-color: var(--accent-cyan);
+    }
+
+    .help-text {
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        line-height: 1.6;
+    }
+
+    .help-text code {
+        background: var(--bg-hover);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+        font-size: 0.8rem;
+        color: var(--accent-cyan);
+    }
+
+    /* Warning banner */
+    .terminal-warning {
+        background: rgba(234, 179, 8, 0.1);
+        border: 1px solid rgba(234, 179, 8, 0.3);
+        border-radius: var(--radius-md);
+        padding: 12px 16px;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 0.85rem;
+        color: var(--warning);
+    }
+
+    .terminal-warning svg {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .terminal-wrapper {
+            height: 400px;
+        }
+
+        .command-list {
+            gap: 6px;
+        }
+
+        .command-tag {
+            padding: 4px 8px;
+            font-size: 0.75rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="page-header">
+    <h1 class="page-title">Terminal</h1>
+    <p class="page-subtitle">
+        {% if customer.platform == 'magento' %}
+        Run Magento CLI and shell commands in your container
+        {% else %}
+        Run WP-CLI and shell commands in your WordPress container
+        {% endif %}
+    </p>
+</div>
+
+<div class="terminal-warning">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+    </svg>
+    Commands are logged for security. Only read-only operations and approved CLI commands are available.
+</div>
+
+<div class="terminal-wrapper">
+    <div class="terminal-header">
+        <div class="terminal-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 17 10 11 4 5"></polyline>
+                <line x1="12" y1="19" x2="20" y2="19"></line>
+            </svg>
+            <span id="terminal-cwd">{{ customer.domain }} ~/</span>
+        </div>
+        <div class="terminal-status">
+            <span class="status-dot connecting" id="status-dot"></span>
+            <span id="status-text">Connecting...</span>
+        </div>
+    </div>
+    <div id="terminal-container"></div>
+</div>
+
+<div class="help-panel">
+    <div class="help-section">
+        <h4>Quick Commands</h4>
+        <div class="command-list">
+            {% if customer.platform == 'magento' %}
+            <span class="command-tag" data-cmd="bin/magento cache:status">bin/magento cache:status</span>
+            <span class="command-tag" data-cmd="bin/magento cache:clean">bin/magento cache:clean</span>
+            <span class="command-tag" data-cmd="bin/magento cache:flush">bin/magento cache:flush</span>
+            <span class="command-tag" data-cmd="bin/magento indexer:status">bin/magento indexer:status</span>
+            <span class="command-tag" data-cmd="bin/magento indexer:reindex">bin/magento indexer:reindex</span>
+            <span class="command-tag" data-cmd="ls -la">ls -la</span>
+            {% else %}
+            <span class="command-tag" data-cmd="wp plugin list">wp plugin list</span>
+            <span class="command-tag" data-cmd="wp theme list">wp theme list</span>
+            <span class="command-tag" data-cmd="wp cache flush">wp cache flush</span>
+            <span class="command-tag" data-cmd="wp plugin update --all">wp plugin update --all</span>
+            <span class="command-tag" data-cmd="wp db size">wp db size</span>
+            <span class="command-tag" data-cmd="ls -la">ls -la</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="help-section">
+        <h4>Tips</h4>
+        <p class="help-text">
+            Type <code>help</code> for a full list of available commands.
+            Use <code>up/down</code> arrows for command history.
+            Commands are restricted to <code>/var/www/html</code> for security.
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block dashboard_js_block %}
+<!-- xterm.js from CDN -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js" nonce="{{ csp_nonce() }}"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js" nonce="{{ csp_nonce() }}"></script>
+
+<script nonce="{{ csp_nonce() }}">
+(function() {
+    'use strict';
+
+    // Platform from server
+    var platform = '{{ customer.platform }}';
+
+    // Terminal configuration
+    var term = new Terminal({
+        theme: {
+            background: '#0d1117',
+            foreground: '#c9d1d9',
+            cursor: '#00d4ff',
+            cursorAccent: '#0d1117',
+            selectionBackground: '#264f78',
+            black: '#484f58',
+            red: '#ff7b72',
+            green: '#7ee787',
+            yellow: '#d29922',
+            blue: '#58a6ff',
+            magenta: '#bc8cff',
+            cyan: '#00d4ff',
+            white: '#b1bac4',
+            brightBlack: '#6e7681',
+            brightRed: '#ffa198',
+            brightGreen: '#a5d6a7',
+            brightYellow: '#e3b341',
+            brightBlue: '#79c0ff',
+            brightMagenta: '#d2a8ff',
+            brightCyan: '#56d4dd',
+            brightWhite: '#f0f0f0'
+        },
+        fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+        fontSize: 14,
+        lineHeight: 1.2,
+        cursorBlink: true,
+        cursorStyle: 'bar',
+        scrollback: 1000,
+        tabStopWidth: 4
+    });
+
+    var fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+
+    var container = document.getElementById('terminal-container');
+    term.open(container);
+    fitAddon.fit();
+
+    // State
+    var sessionId = null;
+    var currentLine = '';
+    var cwd = '/var/www/html';
+    var commandHistory = [];
+    var historyIndex = -1;
+    var isExecuting = false;
+
+    // UI elements
+    var statusDot = document.getElementById('status-dot');
+    var statusText = document.getElementById('status-text');
+    var cwdDisplay = document.getElementById('terminal-cwd');
+
+    function setStatus(status, text) {
+        statusDot.className = 'status-dot ' + status;
+        statusText.textContent = text;
+    }
+
+    function updateCwdDisplay() {
+        var shortCwd = cwd.replace('/var/www/html', '~');
+        cwdDisplay.textContent = '{{ customer.domain }} ' + shortCwd;
+    }
+
+    function showPrompt() {
+        var shortCwd = cwd.replace('/var/www/html', '~');
+        term.write('\r\n\x1b[36m' + shortCwd + '\x1b[0m $ ');
+    }
+
+    // Initialize session
+    async function initSession() {
+        try {
+            var response = await fetch('/dashboard/terminal/api/session', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                var error = await response.json();
+                throw new Error(error.error || 'Failed to connect');
+            }
+
+            var data = await response.json();
+            sessionId = data.session_id;
+            cwd = data.cwd;
+            if (data.platform) {
+                platform = data.platform;
+            }
+            updateCwdDisplay();
+            setStatus('', 'Connected');
+            showPrompt();
+
+        } catch (e) {
+            setStatus('disconnected', 'Disconnected');
+            term.writeln('\r\n\x1b[31mError: ' + e.message + '\x1b[0m');
+            term.writeln('\x1b[33mPlease refresh the page to try again.\x1b[0m');
+        }
+    }
+
+    async function executeCommand(cmd) {
+        if (!cmd.trim()) {
+            showPrompt();
+            return;
+        }
+
+        // Add to history
+        if (commandHistory.length === 0 || commandHistory[commandHistory.length - 1] !== cmd) {
+            commandHistory.push(cmd);
+        }
+        historyIndex = commandHistory.length;
+
+        // Handle local commands
+        if (cmd.toLowerCase() === 'clear') {
+            term.clear();
+            showPrompt();
+            return;
+        }
+
+        if (!sessionId) {
+            term.writeln('\r\n\x1b[31mNot connected. Please refresh the page.\x1b[0m');
+            showPrompt();
+            return;
+        }
+
+        isExecuting = true;
+        setStatus('connecting', 'Executing...');
+
+        try {
+            var response = await fetch('/dashboard/terminal/api/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    command: cmd
+                })
+            });
+
+            var data = await response.json();
+
+            if (data.error) {
+                term.writeln('\r\n\x1b[31m' + data.error + '\x1b[0m');
+            } else {
+                // Handle clear action
+                if (data.action === 'clear') {
+                    term.clear();
+                } else if (data.output) {
+                    // Write output with proper line endings
+                    var lines = data.output.split('\n');
+                    for (var i = 0; i < lines.length; i++) {
+                        term.writeln('\r\n' + lines[i]);
+                    }
+                }
+
+                // Update cwd if changed
+                if (data.cwd && data.cwd !== cwd) {
+                    cwd = data.cwd;
+                    updateCwdDisplay();
+                }
+
+                // Show warning if present
+                if (data.warning) {
+                    term.writeln('\r\n\x1b[33mNote: ' + data.warning + '\x1b[0m');
+                }
+            }
+
+        } catch (e) {
+            term.writeln('\r\n\x1b[31mError: ' + e.message + '\x1b[0m');
+        }
+
+        isExecuting = false;
+        setStatus('', 'Connected');
+        showPrompt();
+    }
+
+    // Handle keyboard input
+    term.onData(function(data) {
+        if (isExecuting) return;
+
+        var code = data.charCodeAt(0);
+
+        if (code === 13) {  // Enter
+            executeCommand(currentLine);
+            currentLine = '';
+        } else if (code === 127) {  // Backspace
+            if (currentLine.length > 0) {
+                currentLine = currentLine.slice(0, -1);
+                term.write('\b \b');
+            }
+        } else if (code === 27) {  // Escape sequences (arrows)
+            if (data === '\x1b[A') {  // Up arrow
+                if (historyIndex > 0) {
+                    historyIndex--;
+                    clearCurrentLine();
+                    currentLine = commandHistory[historyIndex];
+                    term.write(currentLine);
+                }
+            } else if (data === '\x1b[B') {  // Down arrow
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++;
+                    clearCurrentLine();
+                    currentLine = commandHistory[historyIndex];
+                    term.write(currentLine);
+                } else if (historyIndex === commandHistory.length - 1) {
+                    historyIndex = commandHistory.length;
+                    clearCurrentLine();
+                    currentLine = '';
+                }
+            }
+        } else if (code === 3) {  // Ctrl+C
+            term.writeln('^C');
+            currentLine = '';
+            showPrompt();
+        } else if (code === 12) {  // Ctrl+L
+            term.clear();
+            showPrompt();
+            term.write(currentLine);
+        } else if (code >= 32) {  // Printable characters
+            currentLine += data;
+            term.write(data);
+        }
+    });
+
+    function clearCurrentLine() {
+        // Move to start of input and clear to end of line
+        var promptLen = cwd.replace('/var/www/html', '~').length + 3;  // "~ $ "
+        term.write('\r\x1b[' + promptLen + 'C\x1b[K');
+    }
+
+    // Handle resize
+    window.addEventListener('resize', function() {
+        fitAddon.fit();
+    });
+
+    // Quick command buttons
+    document.querySelectorAll('.command-tag[data-cmd]').forEach(function(tag) {
+        tag.addEventListener('click', function() {
+            var cmd = this.getAttribute('data-cmd');
+            if (cmd && !isExecuting) {
+                currentLine = cmd;
+                clearCurrentLine();
+                term.write(cmd);
+                executeCommand(cmd);
+                currentLine = '';
+            }
+        });
+    });
+
+    // Welcome message
+    var welcomeMsg = platform === 'magento'
+        ? '\x1b[1;36mShopHosting Magento Terminal\x1b[0m'
+        : '\x1b[1;36mShopHosting WP-CLI Terminal\x1b[0m';
+    term.writeln(welcomeMsg);
+    term.writeln('\x1b[90mType "help" for available commands, "clear" to clear screen\x1b[0m');
+
+    // Initialize
+    initSession();
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        if (sessionId) {
+            navigator.sendBeacon('/dashboard/terminal/api/session/' + sessionId, '');
+        }
+    });
+})();
+</script>
+{% endblock %}

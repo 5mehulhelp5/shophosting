@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Admin Panel{% endblock %} - ShopHosting.io</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%230088ff' rx='20' width='100' height='100'/><text x='50%25' y='50%25' dominant-baseline='central' text-anchor='middle' font-size='60' fill='white' font-family='system-ui'>S</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -363,6 +364,13 @@
         .badge-failed, .badge-error { background: var(--error-muted); color: var(--error); }
         .badge-suspended { background: var(--bg-surface); color: var(--text-tertiary); }
 
+        /* Admin role badges */
+        .badge-super_admin { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+        .badge-admin { background: var(--info-muted); color: var(--accent-blue); }
+        .badge-finance_admin { background: var(--success-muted); color: var(--success); }
+        .badge-acquisition { background: rgba(236, 72, 153, 0.15); color: #f472b6; }
+        .badge-support { background: var(--warning-muted); color: var(--warning); }
+
         .pulse-indicator {
             display: inline-block;
             width: 8px;
@@ -590,6 +598,13 @@
                 </div>
                 <div class="nav-section">
                     <div class="nav-section-title">Management</div>
+                    {% if session.get('admin_user_role') in ['super_admin', 'admin', 'acquisition'] %}
+                    <a href="{{ url_for('admin.leads_admin.dashboard') }}" class="nav-link {% if 'leads_admin' in request.endpoint %}active{% endif %}">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                        Leads
+                    </a>
+                    {% endif %}
+                    {% if session.get('admin_user_role') not in ['acquisition'] %}
                     <a href="{{ url_for('admin.customers') }}" class="nav-link {% if 'customer' in request.endpoint %}active{% endif %}">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                         Customers
@@ -598,6 +613,8 @@
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                         Provisioning
                     </a>
+                    {% endif %}
+                    {% if session.get('admin_user_role') not in ['acquisition', 'finance_admin'] %}
                     <a href="{{ url_for('admin.tickets') }}" class="nav-link {% if 'ticket' in request.endpoint %}active{% endif %}">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
                         Support Tickets
@@ -605,6 +622,40 @@
                     <a href="{{ url_for('admin.appointments') }}" class="nav-link {% if 'appointment' in request.endpoint %}active{% endif %}">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                         Appointments
+                    </a>
+                    {% endif %}
+                </div>
+                {% if session.get('admin_user_role') in ['marketing', 'admin', 'super_admin'] %}
+                <div class="nav-section">
+                    <div class="nav-section-title">Marketing</div>
+                    <a href="{{ url_for('admin.marketing.dashboard') }}" class="nav-link {% if request.path.startswith('/admin/marketing') %}active{% endif %}">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                        Command Center
+                    </a>
+                    <a href="{{ url_for('admin.marketing.content_library') }}" class="nav-link {% if '/marketing/content' in request.path %}active{% endif %}">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        Content Library
+                    </a>
+                </div>
+                {% endif %}
+                {% if session.get('admin_user_role') not in ['acquisition', 'finance_admin', 'support'] %}
+                <div class="nav-section">
+                    <div class="nav-section-title">Mail</div>
+                    <a href="{{ url_for('admin.mail.dashboard') }}" class="nav-link {% if request.endpoint == 'admin.mail.dashboard' %}active{% endif %}">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                        Dashboard
+                    </a>
+                    <a href="{{ url_for('admin.mail.mailboxes') }}" class="nav-link {% if request.endpoint == 'admin.mail.mailboxes' %}active{% endif %}">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg>
+                        Mailboxes
+                    </a>
+                    <a href="{{ url_for('admin.mail.aliases') }}" class="nav-link {% if request.endpoint == 'admin.mail.aliases' %}active{% endif %}">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path></svg>
+                        Aliases
+                    </a>
+                    <a href="{{ url_for('admin.mail.catch_all') }}" class="nav-link {% if request.endpoint == 'admin.mail.catch_all' %}active{% endif %}">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                        Catch-All
                     </a>
                 </div>
                 <div class="nav-section">
@@ -614,6 +665,7 @@
                         Site Pages
                     </a>
                 </div>
+                {% endif %}
                 <div class="nav-section">
                     <div class="nav-section-title">Administration</div>
                     {% if session.get('admin_user_role') == 'super_admin' %}
@@ -622,20 +674,32 @@
                         Pricing Plans
                     </a>
                     {% endif %}
+                    {% if session.get('admin_user_role') not in ['acquisition', 'finance_admin'] %}
                     <a href="{{ url_for('admin.admins') }}" class="nav-link {% if request.endpoint in ['admin.admins', 'admin.new_admin', 'admin.edit_admin'] %}active{% endif %}">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                         Admin Users
                     </a>
+                    {% endif %}
                     <a href="{{ url_for('admin.change_password') }}" class="nav-link {% if request.endpoint == 'admin.change_password' %}active{% endif %}">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
                         Change Password
                     </a>
                 </div>
+                {% if session.get('admin_user_role') not in ['acquisition', 'support'] %}
                 <div class="nav-section">
                     <div class="nav-section-title">System</div>
+                    {% if session.get('admin_user_role') not in ['finance_admin'] %}
+                    <a href="{{ url_for('admin.monitoring') }}" class="nav-link {% if 'monitoring' in request.endpoint %}active{% endif %}">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                        Monitoring
+                    </a>
                     <a href="{{ url_for('admin.system') }}" class="nav-link {% if request.endpoint == 'admin.system' %}active{% endif %}">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
                         System Health
+                    </a>
+                    <a href="{{ url_for('admin.servers') }}" class="nav-link {% if 'server' in request.endpoint %}active{% endif %}">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path></svg>
+                        Servers
                     </a>
                     {# TODO: Implement system_backups route
                     <a href="{{ url_for('admin.system_backups') }}" class="nav-link {% if 'system_backup' in request.endpoint %}active{% endif %}">
@@ -643,11 +707,13 @@
                         System Backups
                     </a>
                     #}
-                    <a href="{{ url_for('admin.billing') }}" class="nav-link {% if request.endpoint == 'admin.billing' %}active{% endif %}">
+                    {% endif %}
+                    <a href="{{ url_for('admin_billing.dashboard') }}" class="nav-link {% if 'admin_billing' in request.endpoint %}active{% endif %}">
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         Billing
                     </a>
                 </div>
+                {% endif %}
             </nav>
         </aside>
 

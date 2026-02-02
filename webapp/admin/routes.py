@@ -7,6 +7,8 @@ import os
 import subprocess
 import logging
 import re
+import secrets
+import string
 from functools import wraps
 from datetime import datetime, timedelta
 
@@ -14,16 +16,23 @@ from flask import render_template, request, redirect, url_for, flash, session, j
 from flask_wtf import FlaskForm
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from wtforms import StringField, PasswordField, SelectField, BooleanField, SubmitField
+from wtforms import StringField, PasswordField, SelectField, BooleanField, SubmitField, ValidationError
 from wtforms.validators import DataRequired, Email, Length, EqualTo
 
 from . import admin_bp
 from .models import AdminUser, log_admin_action
+from .billing_service import BillingService, CustomerCredit, BillingServiceError
 
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from models import Customer, PortManager, get_db_connection, PricingPlan, Subscription, Invoice
 from models import Ticket, TicketMessage, TicketAttachment, TicketCategory, ConsultationAppointment
+from models import Server, ServerSelector
+from models import MonitoringCheck, CustomerMonitoringStatus, MonitoringAlert
+from models import ResourceUsage, ResourceAlert
+from models import StagingEnvironment, StagingPortManager
+from status.models import StatusIncident, StatusIncidentUpdate, StatusMaintenance, StatusOverride
+from services.container_service import ContainerService
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +53,53 @@ def admin_required(f):
             return redirect(url_for('admin.login'))
         return f(*args, **kwargs)
     return decorated_function
+
+
+def super_admin_required(f):
+    """Require super admin role for access"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if session.get('admin_user_role') != 'super_admin':
+            flash('This action requires super admin privileges.', 'error')
+            return redirect(url_for('admin.dashboard'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def admin_or_super_required(f):
+    """Require admin or super_admin role (excludes support and finance_admin)"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        role = session.get('admin_user_role')
+        if role not in ['admin', 'super_admin']:
+            flash('This action requires admin privileges.', 'error')
+            return redirect(url_for('admin.dashboard'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def acquisition_or_admin_required(f):
+    """Require acquisition, admin, or super_admin role for leads management access"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        role = session.get('admin_user_role')
+        if role not in ['acquisition', 'admin', 'super_admin']:
+            flash('This action requires acquisition or admin privileges.', 'error')
+            return redirect(url_for('admin.dashboard'))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def marketing_or_admin_required(f):
+    """Require marketing, admin, or super_admin role for Marketing Command Center access"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        role = session.get('admin_user_role')
+        if role not in ['marketing', 'admin', 'super_admin']:
+            flash('This action requires marketing or admin privileges.', 'error')
+            return redirect(url_for('admin.dashboard'))
+        return f(*args, **kwargs)
+    return decorated
 
 
 def get_current_admin():
@@ -226,6 +282,22 @@ def customer_detail(customer_id):
     if in_progress_job:
         provisioning_logs = get_provisioning_logs_by_job(in_progress_job['job_id'])
 
+    # Fetch monitoring data for active customers
+    monitoring_status = None
+    monitoring_alerts = []
+    if customer.status == 'active':
+        monitoring_status = CustomerMonitoringStatus.get_or_create(customer_id)
+        monitoring_alerts = MonitoringAlert.get_by_customer(customer_id, limit=5)
+
+    # Fetch billing summary for billing tab
+    billing_summary = None
+    try:
+        billing_summary = BillingService.get_customer_billing_summary(customer_id)
+        # Add credit history to billing summary
+        billing_summary['credit_history'] = CustomerCredit.get_by_customer(customer_id, limit=10)
+    except Exception as e:
+        logger.warning(f"Failed to load billing summary for customer {customer_id}: {e}")
+
     return render_template('admin/customer_detail.html',
                            admin=admin,
                            customer=customer,
@@ -234,13 +306,43 @@ def customer_detail(customer_id):
                            jobs=jobs,
                            audit_logs=audit_logs,
                            provisioning_logs=provisioning_logs,
-                           in_progress_job=in_progress_job)
+                           in_progress_job=in_progress_job,
+                           monitoring_status=monitoring_status,
+                           monitoring_alerts=monitoring_alerts,
+                           billing_summary=billing_summary,
+                           admin_role=session.get('admin_user_role'))
+
+
+@admin_bp.route('/customers/<int:customer_id>/resources')
+@admin_required
+def customer_resources(customer_id):
+    """View detailed resource usage for a customer"""
+    admin = get_current_admin()
+    customer = Customer.get_by_id(customer_id)
+
+    if not customer:
+        flash('Customer not found', 'error')
+        return redirect(url_for('admin.customers'))
+
+    usage = customer.get_resource_usage()
+    history = ResourceUsage.get_usage_history(customer_id, days=30)
+    alerts = ResourceAlert.get_recent_for_customer(customer_id, limit=20)
+    plan = PricingPlan.get_by_id(customer.plan_id) if customer.plan_id else None
+
+    return render_template('admin/customer_resources.html',
+                           admin=admin,
+                           customer=customer,
+                           usage=usage,
+                           history=history,
+                           alerts=alerts,
+                           plan=plan)
 
 
 @admin_bp.route('/customers/<int:customer_id>/suspend', methods=['POST'])
 @admin_required
+@admin_or_super_required
 def customer_suspend(customer_id):
-    """Suspend a customer"""
+    """Suspend a customer - stops containers but preserves data"""
     admin = get_current_admin()
     customer = Customer.get_by_id(customer_id)
 
@@ -252,22 +354,40 @@ def customer_suspend(customer_id):
         flash('Customer is already suspended.', 'warning')
         return redirect(url_for('admin.customer_detail', customer_id=customer_id))
 
+    # Get suspension reason from form
+    reason = request.form.get('reason', 'Admin action')
+
+    # Stop containers first (preserves data, just stops running)
+    container_success, container_msg = ContainerService.stop_containers(customer_id)
+    if not container_success:
+        logger.warning(f"Could not stop containers for customer {customer_id}: {container_msg}")
+        # Continue with suspension even if container stop fails
+
     # Update customer status
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute(
-            "UPDATE customers SET status = 'suspended' WHERE id = %s",
-            (customer_id,)
-        )
+        cursor.execute("""
+            UPDATE customers
+            SET status = 'suspended',
+                suspension_reason = %s,
+                suspended_at = NOW(),
+                auto_suspended = FALSE
+            WHERE id = %s
+        """, (reason, customer_id))
         conn.commit()
     finally:
         cursor.close()
         conn.close()
 
     log_admin_action(admin.id, 'customer_suspend', 'customer', customer_id,
-                     f'Suspended customer {customer.email}', request.remote_addr)
-    flash(f'Customer {customer.email} has been suspended.', 'success')
+                     f'Suspended customer {customer.email}: {reason}', request.remote_addr)
+
+    if container_success:
+        flash(f'Customer {customer.email} has been suspended. Containers stopped.', 'success')
+    else:
+        flash(f'Customer {customer.email} has been suspended. Warning: {container_msg}', 'warning')
+
     return redirect(url_for('admin.customer_detail', customer_id=customer_id))
 
 
@@ -349,15 +469,26 @@ def customer_retry_provisioning(customer_id):
             'cpu_limit': os.getenv('DEFAULT_CPU_LIMIT', '1.0')
         }
 
-        job = queue.enqueue_customer(customer_data)
+        job, server = queue.enqueue_customer(customer_data)
 
-        # Record the job
+        # Update customer with server assignment
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE customers SET server_id = %s WHERE id = %s",
+            (server.id, customer_id)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        # Record the job with server_id
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO provisioning_jobs (customer_id, job_id, status)
-            VALUES (%s, %s, 'queued')
-        """, (customer_id, job.id))
+            INSERT INTO provisioning_jobs (customer_id, job_id, status, server_id)
+            VALUES (%s, %s, 'queued', %s)
+        """, (customer_id, job.id, server.id))
         conn.commit()
         cursor.close()
         conn.close()
@@ -373,8 +504,9 @@ def customer_retry_provisioning(customer_id):
 
 @admin_bp.route('/customers/<int:customer_id>/reactivate', methods=['POST'])
 @admin_required
+@admin_or_super_required
 def customer_reactivate(customer_id):
-    """Reactivate a suspended customer"""
+    """Reactivate a suspended customer - starts containers"""
     admin = get_current_admin()
     customer = Customer.get_by_id(customer_id)
 
@@ -386,14 +518,25 @@ def customer_reactivate(customer_id):
         flash('Customer is not suspended.', 'warning')
         return redirect(url_for('admin.customer_detail', customer_id=customer_id))
 
+    # Start containers
+    container_success, container_msg = ContainerService.start_containers(customer_id)
+    if not container_success:
+        logger.warning(f"Could not start containers for customer {customer_id}: {container_msg}")
+        # Continue with reactivation even if container start fails
+
     # Update customer status back to active
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute(
-            "UPDATE customers SET status = 'active' WHERE id = %s",
-            (customer_id,)
-        )
+        cursor.execute("""
+            UPDATE customers
+            SET status = 'active',
+                suspension_reason = NULL,
+                suspended_at = NULL,
+                auto_suspended = FALSE,
+                reactivated_at = NOW()
+            WHERE id = %s
+        """, (customer_id,))
         conn.commit()
     finally:
         cursor.close()
@@ -401,7 +544,12 @@ def customer_reactivate(customer_id):
 
     log_admin_action(admin.id, 'customer_reactivate', 'customer', customer_id,
                      f'Reactivated customer {customer.email}', request.remote_addr)
-    flash(f'Customer {customer.email} has been reactivated.', 'success')
+
+    if container_success:
+        flash(f'Customer {customer.email} has been reactivated. Containers started.', 'success')
+    else:
+        flash(f'Customer {customer.email} has been reactivated. Warning: {container_msg}', 'warning')
+
     return redirect(url_for('admin.customer_detail', customer_id=customer_id))
 
 
@@ -465,13 +613,15 @@ def system():
     port_usage = PortManager.get_port_usage()
     disk_usage = get_disk_usage()
     backup_status = get_backup_status()
+    server_stats = ServerSelector.get_server_stats()
 
     return render_template('admin/system.html',
                            admin=admin,
                            services=services,
                            port_usage=port_usage,
                            disk_usage=disk_usage,
-                           backup_status=backup_status)
+                           backup_status=backup_status,
+                           server_stats=server_stats)
 
 
 # =============================================================================
@@ -509,8 +659,9 @@ def system_backups():
 
 @admin_bp.route('/system/backup/create', methods=['POST'])
 @admin_required
+@super_admin_required
 def system_backup_create():
-    """Create a new system backup"""
+    """Create a new system backup (super_admin only)"""
     admin = get_current_admin()
 
     try:
@@ -528,8 +679,9 @@ def system_backup_create():
 
 @admin_bp.route('/system/backup/restore/<snapshot_id>', methods=['POST'])
 @admin_required
+@super_admin_required
 def system_backup_restore(snapshot_id):
-    """Restore from a system backup snapshot"""
+    """Restore from a system backup snapshot (super_admin only)"""
     admin = get_current_admin()
 
     # Get restore target from form
@@ -548,6 +700,349 @@ def system_backup_restore(snapshot_id):
         return {'success': True, 'message': f'Restore started for snapshot {snapshot_id}'}
     except Exception as e:
         return {'success': False, 'message': str(e)}, 500
+
+
+# =============================================================================
+# Server Management
+# =============================================================================
+
+@admin_bp.route('/servers')
+@admin_required
+def servers():
+    """List all servers"""
+    admin = get_current_admin()
+    servers_list = Server.get_all()
+    stats = ServerSelector.get_server_stats()
+
+    return render_template('admin/servers.html',
+                           admin=admin,
+                           servers=servers_list,
+                           stats=stats)
+
+
+@admin_bp.route('/servers/<int:server_id>')
+@admin_required
+def server_detail(server_id):
+    """Server detail page"""
+    admin = get_current_admin()
+    server = Server.get_by_id(server_id)
+
+    if not server:
+        flash('Server not found.', 'error')
+        return redirect(url_for('admin.servers'))
+
+    # Get customers on this server
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT id, email, company_name, domain, platform, status, web_port, created_at
+            FROM customers
+            WHERE server_id = %s
+            ORDER BY created_at DESC
+        """, (server_id,))
+        customers = cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+    port_info = server.get_port_capacity()
+
+    return render_template('admin/server_detail.html',
+                           admin=admin,
+                           server=server,
+                           customers=customers,
+                           port_info=port_info)
+
+
+@admin_bp.route('/servers/create', methods=['GET', 'POST'])
+@admin_required
+@super_admin_required
+def server_create():
+    """Create a new server (super_admin only)"""
+    admin = get_current_admin()
+
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        hostname = request.form.get('hostname', '').strip()
+        ip_address = request.form.get('ip_address', '').strip()
+        max_customers = int(request.form.get('max_customers', 50))
+        port_range_start = int(request.form.get('port_range_start', 8001))
+        port_range_end = int(request.form.get('port_range_end', 8100))
+        redis_queue_name = request.form.get('redis_queue_name', '').strip() or None
+
+        if not all([name, hostname, ip_address]):
+            flash('Name, hostname, and IP address are required.', 'error')
+            return render_template('admin/server_form.html', admin=admin, server=None)
+
+        # Check for duplicate hostname
+        if Server.get_by_hostname(hostname):
+            flash(f'A server with hostname {hostname} already exists.', 'error')
+            return render_template('admin/server_form.html', admin=admin, server=None)
+
+        server = Server(
+            name=name,
+            hostname=hostname,
+            ip_address=ip_address,
+            max_customers=max_customers,
+            port_range_start=port_range_start,
+            port_range_end=port_range_end,
+            redis_queue_name=redis_queue_name
+        )
+        server.save()
+
+        log_admin_action(admin.id, 'create_server', 'server', server.id,
+                        f'Created server {name}', request.remote_addr)
+        flash(f'Server {name} created successfully.', 'success')
+        return redirect(url_for('admin.servers'))
+
+    return render_template('admin/server_form.html', admin=admin, server=None)
+
+
+@admin_bp.route('/servers/<int:server_id>/edit', methods=['GET', 'POST'])
+@admin_required
+@super_admin_required
+def server_edit(server_id):
+    """Edit a server (super_admin only)"""
+    admin = get_current_admin()
+    server = Server.get_by_id(server_id)
+
+    if not server:
+        flash('Server not found.', 'error')
+        return redirect(url_for('admin.servers'))
+
+    if request.method == 'POST':
+        server.name = request.form.get('name', '').strip()
+        server.hostname = request.form.get('hostname', '').strip()
+        server.ip_address = request.form.get('ip_address', '').strip()
+        server.max_customers = int(request.form.get('max_customers', 50))
+        server.port_range_start = int(request.form.get('port_range_start', 8001))
+        server.port_range_end = int(request.form.get('port_range_end', 8100))
+        server.redis_queue_name = request.form.get('redis_queue_name', '').strip() or None
+
+        if not all([server.name, server.hostname, server.ip_address]):
+            flash('Name, hostname, and IP address are required.', 'error')
+            return render_template('admin/server_form.html', admin=admin, server=server)
+
+        server.save()
+
+        log_admin_action(admin.id, 'edit_server', 'server', server.id,
+                        f'Updated server {server.name}', request.remote_addr)
+        flash(f'Server {server.name} updated successfully.', 'success')
+        return redirect(url_for('admin.server_detail', server_id=server.id))
+
+    return render_template('admin/server_form.html', admin=admin, server=server)
+
+
+@admin_bp.route('/servers/<int:server_id>/maintenance', methods=['POST'])
+@admin_required
+@super_admin_required
+def server_toggle_maintenance(server_id):
+    """Toggle server maintenance mode (super_admin only)"""
+    admin = get_current_admin()
+    server = Server.get_by_id(server_id)
+
+    if not server:
+        flash('Server not found.', 'error')
+        return redirect(url_for('admin.servers'))
+
+    if server.status == 'maintenance':
+        server.status = 'active'
+        action = 'activated'
+    else:
+        server.status = 'maintenance'
+        action = 'put into maintenance'
+
+    server.save()
+
+    log_admin_action(admin.id, 'toggle_server_maintenance', 'server', server.id,
+                    f'Server {server.name} {action}', request.remote_addr)
+    flash(f'Server {server.name} has been {action}.', 'success')
+    return redirect(url_for('admin.server_detail', server_id=server.id))
+
+
+@admin_bp.route('/servers/<int:server_id>/delete', methods=['POST'])
+@admin_required
+@super_admin_required
+def server_delete(server_id):
+    """Delete a server (super_admin only, only if no customers)"""
+    admin = get_current_admin()
+    server = Server.get_by_id(server_id)
+
+    if not server:
+        flash('Server not found.', 'error')
+        return redirect(url_for('admin.servers'))
+
+    try:
+        server_name = server.name
+        server.delete()
+        log_admin_action(admin.id, 'delete_server', 'server', server_id,
+                        f'Deleted server {server_name}', request.remote_addr)
+        flash(f'Server {server_name} has been deleted.', 'success')
+    except ValueError as e:
+        flash(str(e), 'error')
+
+    return redirect(url_for('admin.servers'))
+
+
+# =============================================================================
+# Staging Environments Management
+# =============================================================================
+
+@admin_bp.route('/staging')
+@admin_required
+def staging_list():
+    """List all staging environments"""
+    admin = get_current_admin()
+
+    page = request.args.get('page', 1, type=int)
+    status_filter = request.args.get('status', None)
+    customer_filter = request.args.get('customer_id', None, type=int)
+
+    staging_envs, total = StagingEnvironment.get_all(
+        include_deleted=request.args.get('show_deleted') == '1',
+        page=page,
+        per_page=20
+    )
+
+    # Get staging statistics
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_count,
+                SUM(CASE WHEN status = 'creating' THEN 1 ELSE 0 END) as creating_count,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count
+            FROM staging_environments
+            WHERE status != 'deleted'
+        """)
+        stats = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+    # Port usage for staging
+    staging_port_usage = {
+        'total': StagingPortManager.PORT_RANGE_END - StagingPortManager.PORT_RANGE_START + 1,
+        'used': stats['total'] if stats else 0
+    }
+    staging_port_usage['available'] = staging_port_usage['total'] - staging_port_usage['used']
+
+    return render_template('admin/staging.html',
+                           admin=admin,
+                           staging_envs=staging_envs,
+                           total=total,
+                           page=page,
+                           stats=stats,
+                           staging_port_usage=staging_port_usage)
+
+
+@admin_bp.route('/staging/<int:staging_id>')
+@admin_required
+def staging_detail(staging_id):
+    """View staging environment details"""
+    admin = get_current_admin()
+
+    staging = StagingEnvironment.get_by_id(staging_id)
+    if not staging:
+        flash('Staging environment not found.', 'error')
+        return redirect(url_for('admin.staging_list'))
+
+    customer = Customer.get_by_id(staging.customer_id)
+    sync_history = staging.get_sync_history(limit=20)
+
+    return render_template('admin/staging_detail.html',
+                           admin=admin,
+                           staging=staging,
+                           customer=customer,
+                           sync_history=sync_history)
+
+
+@admin_bp.route('/staging/<int:staging_id>/delete', methods=['POST'])
+@admin_required
+@admin_or_super_required
+def staging_delete(staging_id):
+    """Delete a staging environment (admin/super_admin only)"""
+    admin = get_current_admin()
+
+    staging = StagingEnvironment.get_by_id(staging_id)
+    if not staging:
+        flash('Staging environment not found.', 'error')
+        return redirect(url_for('admin.staging_list'))
+
+    try:
+        from redis import Redis
+        from rq import Queue
+
+        redis_host = os.getenv('REDIS_HOST', 'localhost')
+        redis_conn = Redis(host=redis_host, port=6379)
+        queue = Queue('staging', connection=redis_conn)
+
+        sys.path.insert(0, '/opt/shophosting/provisioning')
+        from staging_worker import delete_staging_job
+        job = queue.enqueue(delete_staging_job, staging_id,
+                           job_timeout=300, result_ttl=3600)
+
+        log_admin_action(admin.id, 'delete_staging', 'staging_environment', staging_id,
+                        f'Deleted staging {staging.staging_domain}', request.remote_addr)
+
+        flash(f'Staging environment {staging.staging_domain} is being deleted.', 'success')
+        logger.info(f"Admin {admin.id} deleted staging {staging_id}")
+
+    except Exception as e:
+        logger.error(f"Failed to delete staging: {e}")
+        flash('Failed to delete staging environment.', 'error')
+
+    return redirect(url_for('admin.staging_list'))
+
+
+@admin_bp.route('/customer/<int:customer_id>/staging/create', methods=['POST'])
+@admin_required
+def staging_create_for_customer(customer_id):
+    """Create staging environment for a customer (admin)"""
+    admin = get_current_admin()
+
+    customer = Customer.get_by_id(customer_id)
+    if not customer:
+        flash('Customer not found.', 'error')
+        return redirect(url_for('admin.customers'))
+
+    if customer.status != 'active':
+        flash('Customer site must be active to create staging.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    if not StagingEnvironment.can_create_staging(customer_id):
+        flash(f'Customer already has maximum staging environments.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    staging_name = request.form.get('staging_name', '').strip() or None
+
+    try:
+        from redis import Redis
+        from rq import Queue
+
+        redis_host = os.getenv('REDIS_HOST', 'localhost')
+        redis_conn = Redis(host=redis_host, port=6379)
+        queue = Queue('staging', connection=redis_conn)
+
+        sys.path.insert(0, '/opt/shophosting/provisioning')
+        from staging_worker import create_staging_job
+        job = queue.enqueue(create_staging_job, customer_id, staging_name,
+                           job_timeout=600, result_ttl=3600)
+
+        log_admin_action(admin.id, 'create_staging', 'customer', customer_id,
+                        f'Created staging for customer {customer.email}', request.remote_addr)
+
+        flash('Staging environment is being created.', 'success')
+        logger.info(f"Admin {admin.id} created staging for customer {customer_id}")
+
+    except Exception as e:
+        logger.error(f"Failed to create staging: {e}")
+        flash('Failed to create staging environment.', 'error')
+
+    return redirect(url_for('admin.customer_detail', customer_id=customer_id))
 
 
 # =============================================================================
@@ -1473,8 +1968,9 @@ def get_subscription_breakdown():
 
 @admin_bp.route('/restart/<service>', methods=['POST'])
 @admin_required
+@super_admin_required
 def restart_service(service):
-    """Restart a system service"""
+    """Restart a system service (super_admin only)"""
     admin = get_current_admin()
 
     allowed_services = ['shophosting-webapp', 'provisioning-worker', 'nginx', 'redis', 'mysql']
@@ -1501,8 +1997,9 @@ def restart_service(service):
 
 @admin_bp.route('/backup/run', methods=['POST'])
 @admin_required
+@super_admin_required
 def run_backup():
-    """Run backup manually"""
+    """Run backup manually (super_admin only)"""
     admin = get_current_admin()
 
     try:
@@ -1522,8 +2019,9 @@ def run_backup():
 
 @admin_bp.route('/jobs/clear-failed', methods=['POST'])
 @admin_required
+@super_admin_required
 def clear_failed_jobs():
-    """Clear all failed jobs from the queue"""
+    """Clear all failed jobs from the queue (super_admin only)"""
     admin = get_current_admin()
 
     try:
@@ -1609,8 +2107,9 @@ def manage_customers():
 
 @admin_bp.route('/manage-customers/create', methods=['GET', 'POST'])
 @admin_required
+@admin_or_super_required
 def create_customer():
-    """Create a new customer and queue provisioning"""
+    """Create a new customer and queue provisioning (admin/super_admin only)"""
     admin = get_current_admin()
 
     if request.method == 'POST':
@@ -1683,20 +2182,31 @@ def create_customer():
                         'cpu_limit': os.getenv('DEFAULT_CPU_LIMIT', '1.0')
                     }
 
-                    job = queue.enqueue_customer(customer_data)
+                    job, server = queue.enqueue_customer(customer_data)
 
-                    # Record the job
+                    # Update customer with server assignment
                     conn = get_db_connection()
                     cursor = conn.cursor()
-                    cursor.execute("""
-                        INSERT INTO provisioning_jobs (customer_id, job_id, status)
-                        VALUES (%s, %s, 'queued')
-                    """, (customer_id, job.id))
+                    cursor.execute(
+                        "UPDATE customers SET server_id = %s WHERE id = %s",
+                        (server.id, customer_id)
+                    )
                     conn.commit()
                     cursor.close()
                     conn.close()
 
-                    flash(f'Customer {email} created and provisioning started.', 'success')
+                    # Record the job with server_id
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        INSERT INTO provisioning_jobs (customer_id, job_id, status, server_id)
+                        VALUES (%s, %s, 'queued', %s)
+                    """, (customer_id, job.id, server.id))
+                    conn.commit()
+                    cursor.close()
+                    conn.close()
+
+                    flash(f'Customer {email} created and provisioning started on server {server.name}.', 'success')
                 except Exception as e:
                     flash(f'Customer created but provisioning failed to start: {str(e)}', 'warning')
             else:
@@ -1713,8 +2223,9 @@ def create_customer():
 
 @admin_bp.route('/manage-customers/<int:customer_id>/edit', methods=['GET', 'POST'])
 @admin_required
+@admin_or_super_required
 def edit_customer(customer_id):
-    """Edit a customer"""
+    """Edit a customer (admin/super_admin only)"""
     admin = get_current_admin()
     customer = Customer.get_by_id(customer_id)
 
@@ -1777,8 +2288,9 @@ def edit_customer(customer_id):
 
 @admin_bp.route('/manage-customers/<int:customer_id>/delete', methods=['POST'])
 @admin_required
+@super_admin_required
 def delete_customer(customer_id):
-    """Delete a customer and their containers/configs"""
+    """Delete a customer and their containers/configs (super_admin only)"""
     admin = get_current_admin()
     customer = Customer.get_by_id(customer_id)
 
@@ -1790,8 +2302,27 @@ def delete_customer(customer_id):
     customer_path = f"/var/customers/customer-{customer_id}"
     db_deleted = False
     directory_deleted = False
+    subscription_cancelled = False
 
     try:
+        # Cancel Stripe subscription if exists
+        subscription = Subscription.get_by_customer_id(customer_id)
+        if subscription and subscription.stripe_subscription_id:
+            try:
+                import stripe
+                from stripe_integration.config import init_stripe
+                init_stripe()
+                stripe.Subscription.cancel(subscription.stripe_subscription_id)
+                subscription_cancelled = True
+                logger.info(f"Cancelled Stripe subscription {subscription.stripe_subscription_id} for customer {customer_id}")
+            except stripe.error.InvalidRequestError as e:
+                # Subscription may already be cancelled or not exist
+                logger.warning(f"Could not cancel Stripe subscription: {e}")
+                subscription_cancelled = True  # Consider it handled
+            except Exception as e:
+                logger.error(f"Failed to cancel Stripe subscription: {e}")
+                # Continue with deletion even if Stripe cancellation fails
+
         # Stop and remove containers with volume removal
         if os.path.exists(customer_path):
             result = subprocess.run(
@@ -1854,7 +2385,13 @@ def delete_customer(customer_id):
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
+            # Delete related records first (foreign key order)
+            cursor.execute("DELETE FROM invoices WHERE customer_id = %s", (customer_id,))
+            cursor.execute("DELETE FROM subscriptions WHERE customer_id = %s", (customer_id,))
             cursor.execute("DELETE FROM provisioning_jobs WHERE customer_id = %s", (customer_id,))
+            cursor.execute("DELETE FROM monitoring_alerts WHERE customer_id = %s", (customer_id,))
+            cursor.execute("DELETE FROM monitoring_checks WHERE customer_id = %s", (customer_id,))
+            cursor.execute("DELETE FROM customer_monitoring_status WHERE customer_id = %s", (customer_id,))
             cursor.execute("DELETE FROM customers WHERE id = %s", (customer_id,))
             conn.commit()
             cursor.close()
@@ -1864,9 +2401,10 @@ def delete_customer(customer_id):
             logger.error(f"Database deletion failed: {db_error}")
             raise
 
+        subscription_msg = ' and cancelled subscription' if subscription_cancelled else ''
         log_admin_action(admin.id, 'delete_customer', 'customer', customer_id,
-                        f'Deleted customer {email} and removed containers', request.remote_addr)
-        flash(f'Customer {email} and all associated resources deleted successfully.', 'success')
+                        f'Deleted customer {email}{subscription_msg} and removed containers', request.remote_addr)
+        flash(f'Customer {email} and all associated resources deleted successfully.{" Stripe subscription cancelled." if subscription_cancelled else ""}', 'success')
     except Exception as e:
         if directory_deleted and db_deleted:
             log_admin_action(admin.id, 'delete_customer_partial', 'customer', customer_id,
@@ -1882,23 +2420,18 @@ def delete_customer(customer_id):
     return redirect(url_for('admin.manage_customers'))
 
 
-def super_admin_required(f):
-    """Require super admin role for access"""
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if session.get('admin_user_role') != 'super_admin':
-            flash('This action requires super admin privileges.', 'error')
-            return redirect(url_for('admin.dashboard'))
-        return f(*args, **kwargs)
-    return decorated
-
-
 class AdminUserForm(FlaskForm):
     """Form for creating/editing admin users"""
     full_name = StringField('Full Name', validators=[DataRequired(), Length(max=255)])
     email = StringField('Email', validators=[DataRequired(), Email(), Length(max=255)])
     password = PasswordField('Password', validators=[Length(min=8)])
-    role = SelectField('Role', choices=[('admin', 'Admin'), ('support', 'Support'), ('super_admin', 'Super Admin')], default='admin')
+    role = SelectField('Role', choices=[
+        ('admin', 'Admin'),
+        ('support', 'Support'),
+        ('finance_admin', 'Finance Admin'),
+        ('acquisition', 'Acquisition'),
+        ('super_admin', 'Super Admin')
+    ], default='admin')
     is_active = BooleanField('Active', default=True)
     submit = SubmitField('Save Admin User')
 
@@ -2538,6 +3071,9 @@ def pricing_plan_edit(plan_id):
 
     if request.method == 'POST':
         try:
+            # Capture old price before updating
+            old_price = float(plan.price_monthly)
+
             # Update basic fields
             plan.name = request.form.get('name', plan.name)
             plan.price_monthly = float(request.form.get('price_monthly', plan.price_monthly))
@@ -2557,8 +3093,26 @@ def pricing_plan_edit(plan_id):
 
             plan.update()
 
-            log_admin_action(admin.id, 'pricing_plan_edit', f"Updated pricing plan: {plan.name} (ID: {plan.id})")
-            flash(f'Pricing plan "{plan.name}" updated successfully.', 'success')
+            # Sync to Stripe if price changed
+            price_changed = old_price != plan.price_monthly
+            if price_changed and plan.stripe_price_id:
+                try:
+                    from stripe_integration.pricing import sync_price_to_stripe
+                    # Stripe prices are immutable - must create new price when amount changes
+                    result = sync_price_to_stripe(plan.id, create_new=True)
+                    if result['success']:
+                        log_admin_action(admin.id, 'pricing_plan_edit', f"Updated pricing plan: {plan.name} (ID: {plan.id}) - synced to Stripe")
+                        flash(f'Pricing plan "{plan.name}" updated and synced to Stripe.', 'success')
+                    else:
+                        log_admin_action(admin.id, 'pricing_plan_edit', f"Updated pricing plan: {plan.name} (ID: {plan.id}) - Stripe sync failed: {result['message']}")
+                        flash(f'Plan updated but Stripe sync failed: {result["message"]}', 'warning')
+                except Exception as e:
+                    log_admin_action(admin.id, 'pricing_plan_edit', f"Updated pricing plan: {plan.name} (ID: {plan.id}) - Stripe sync error: {str(e)}")
+                    flash(f'Plan updated but Stripe sync failed: {str(e)}', 'warning')
+            else:
+                log_admin_action(admin.id, 'pricing_plan_edit', f"Updated pricing plan: {plan.name} (ID: {plan.id})")
+                flash(f'Pricing plan "{plan.name}" updated successfully.', 'success')
+
             return redirect(url_for('admin.pricing_plans'))
 
         except ValueError as e:
@@ -2925,7 +3479,7 @@ def _render_about_page(content):
 
 def _render_contact_page(content):
     hero = content.get('hero', {})
-    
+
     return f'''
     <div class="container">
         <section class="hero">
@@ -2934,3 +3488,362 @@ def _render_contact_page(content):
         </section>
     </div>
     '''
+
+
+# =============================================================================
+# Monitoring Dashboard
+# =============================================================================
+
+@admin_bp.route('/monitoring')
+@admin_required
+def monitoring():
+    """Main monitoring dashboard"""
+    admin = get_current_admin()
+    stats = CustomerMonitoringStatus.get_summary_stats()
+    statuses = CustomerMonitoringStatus.get_all_statuses()
+    alerts = MonitoringAlert.get_unacknowledged(limit=10)
+
+    return render_template('admin/monitoring.html',
+                          admin=admin,
+                          stats=stats,
+                          statuses=statuses,
+                          alerts=alerts)
+
+
+@admin_bp.route('/monitoring/<int:customer_id>')
+@admin_required
+def monitoring_detail(customer_id):
+    """Per-customer monitoring detail page"""
+    admin = get_current_admin()
+    customer = Customer.get_by_id(customer_id)
+
+    if not customer:
+        flash('Customer not found.', 'error')
+        return redirect(url_for('admin.monitoring'))
+
+    status = CustomerMonitoringStatus.get_or_create(customer_id)
+    checks = MonitoringCheck.get_recent_by_customer(customer_id, hours=24)
+    alerts = MonitoringAlert.get_by_customer(customer_id, limit=20)
+
+    # Prepare chart data for response times
+    chart_data = []
+    for check in reversed(checks):
+        if check.check_type == 'http' and check.response_time_ms:
+            chart_data.append({
+                'time': check.checked_at.strftime('%H:%M'),
+                'value': check.response_time_ms,
+                'status': check.status
+            })
+
+    return render_template('admin/monitoring_detail.html',
+                          admin=admin,
+                          customer=customer,
+                          status=status,
+                          checks=checks,
+                          alerts=alerts,
+                          chart_data=chart_data)
+
+
+@admin_bp.route('/monitoring/alerts')
+@admin_required
+def monitoring_alerts():
+    """Alert history page"""
+    admin = get_current_admin()
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
+
+    alerts = MonitoringAlert.get_recent(limit=per_page, offset=(page - 1) * per_page)
+
+    return render_template('admin/monitoring_alerts.html',
+                          admin=admin,
+                          alerts=alerts,
+                          page=page)
+
+
+@admin_bp.route('/monitoring/alerts/<int:alert_id>/acknowledge', methods=['POST'])
+@admin_required
+def acknowledge_alert(alert_id):
+    """Acknowledge an alert"""
+    admin = get_current_admin()
+    alert = MonitoringAlert.get_by_id(alert_id)
+
+    if alert:
+        alert.acknowledge(admin.id)
+        log_admin_action(admin.id, 'acknowledge_alert', 'alert', alert_id,
+                        f'Acknowledged monitoring alert', request.remote_addr)
+        flash('Alert acknowledged.', 'success')
+    else:
+        flash('Alert not found.', 'error')
+
+    return redirect(request.referrer or url_for('admin.monitoring'))
+
+
+@admin_bp.route('/api/monitoring/status')
+@admin_required
+def api_monitoring_status():
+    """AJAX endpoint for live status updates"""
+    stats = CustomerMonitoringStatus.get_summary_stats()
+    statuses = CustomerMonitoringStatus.get_all_statuses()
+
+    # Convert datetime objects to strings for JSON
+    for s in statuses:
+        for key in ['last_http_check', 'last_container_check', 'last_state_change',
+                    'last_alert_sent', 'updated_at']:
+            if s.get(key) and hasattr(s[key], 'isoformat'):
+                s[key] = s[key].isoformat()
+
+    return jsonify({
+        'stats': stats,
+        'statuses': statuses,
+        'unacknowledged_count': MonitoringAlert.get_unacknowledged_count()
+    })
+
+
+# =============================================================================
+# Status Page Management
+# =============================================================================
+
+@admin_bp.route('/status')
+@admin_required
+def status_management():
+    """Status page management dashboard"""
+    active_incidents = StatusIncident.get_active()
+    recent_incidents = StatusIncident.get_recent(days=30)
+    upcoming_maintenance = StatusMaintenance.get_upcoming(days=30)
+    overrides = StatusOverride.get_active()
+
+    return render_template('admin/status_management.html',
+                          active_incidents=active_incidents,
+                          recent_incidents=recent_incidents,
+                          upcoming_maintenance=upcoming_maintenance,
+                          overrides=overrides)
+
+@admin_bp.route('/status/incident/create', methods=['GET', 'POST'])
+@admin_required
+@admin_or_super_required
+def create_incident():
+    """Create a new incident (admin/super_admin only)"""
+    if request.method == 'POST':
+        incident = StatusIncident(
+            server_id=request.form.get('server_id') or None,
+            title=request.form['title'],
+            status=request.form.get('status', 'investigating'),
+            severity=request.form.get('severity', 'minor'),
+            is_auto_detected=False
+        )
+        incident.save()
+        message = request.form.get('message', 'We are investigating this issue.')
+        incident.add_update(message, incident.status, session.get('admin_id'))
+        flash('Incident created successfully', 'success')
+        return redirect(url_for('admin.status_management'))
+
+    servers = Server.get_all()
+    return render_template('admin/incident_form.html', servers=servers, incident=None)
+
+@admin_bp.route('/status/incident/<int:incident_id>/update', methods=['POST'])
+@admin_required
+def update_incident(incident_id):
+    """Add update to an incident"""
+    incident = StatusIncident.get_by_id(incident_id)
+    if not incident:
+        flash('Incident not found', 'error')
+        return redirect(url_for('admin.status_management'))
+
+    message = request.form['message']
+    new_status = request.form.get('status')
+
+    if new_status == 'resolved':
+        incident.resolve()
+    elif new_status:
+        incident.status = new_status
+        incident.save()
+
+    incident.add_update(message, new_status or incident.status, session.get('admin_id'))
+    flash('Incident updated', 'success')
+    return redirect(url_for('admin.status_management'))
+
+@admin_bp.route('/status/maintenance/create', methods=['GET', 'POST'])
+@admin_required
+@admin_or_super_required
+def create_maintenance():
+    """Create scheduled maintenance (admin/super_admin only)"""
+    if request.method == 'POST':
+        maintenance = StatusMaintenance(
+            server_id=request.form.get('server_id') or None,
+            title=request.form['title'],
+            description=request.form.get('description'),
+            scheduled_start=request.form['scheduled_start'],
+            scheduled_end=request.form['scheduled_end'],
+            created_by=session.get('admin_id')
+        )
+        maintenance.save()
+        flash('Maintenance window scheduled', 'success')
+        return redirect(url_for('admin.status_management'))
+
+    servers = Server.get_all()
+    return render_template('admin/maintenance_form.html', servers=servers, maintenance=None)
+
+@admin_bp.route('/status/override', methods=['POST'])
+@admin_required
+@admin_or_super_required
+def set_status_override():
+    """Set a manual status override (admin/super_admin only)"""
+    service_name = request.form['service_name']
+    display_status = request.form['display_status']
+    message = request.form.get('message')
+    expires_hours = request.form.get('expires_hours')
+
+    StatusOverride.set_override(
+        service_name=service_name,
+        display_status=display_status,
+        message=message,
+        created_by=session.get('admin_id'),
+        expires_hours=int(expires_hours) if expires_hours else None
+    )
+    flash(f'Status override set for {service_name}', 'success')
+    return redirect(url_for('admin.status_management'))
+
+@admin_bp.route('/status/override/<service_name>/clear', methods=['POST'])
+@admin_required
+def clear_status_override(service_name):
+    """Clear a status override"""
+    StatusOverride.clear_override(service_name)
+    flash(f'Status override cleared for {service_name}', 'success')
+    return redirect(url_for('admin.status_management'))
+
+
+# =============================================================================
+# Billing Routes (Phase 1)
+# =============================================================================
+
+from .permissions import (
+    require_billing_read, require_billing_write, require_billing_refund,
+    can_process_refund, require_revenue_access, require_billing_admin
+)
+
+
+@admin_bp.route('/customers/<int:customer_id>/billing/refund', methods=['POST'])
+@admin_required
+@require_billing_refund()
+def process_refund(customer_id):
+    """Process a refund for a customer invoice"""
+    admin = get_current_admin()
+
+    invoice_id = request.form.get('invoice_id')
+    amount_str = request.form.get('amount', '0')
+    reason = request.form.get('reason', '').strip()
+
+    if not invoice_id:
+        flash('Please select an invoice.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    if not reason:
+        flash('Refund reason is required.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    try:
+        amount_cents = int(float(amount_str) * 100)
+    except ValueError:
+        flash('Invalid refund amount.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    # Check role-based refund limit
+    if not can_process_refund(amount_cents):
+        limit = session.get('admin_user_role')
+        flash(f'Refund amount exceeds your limit. Please contact a supervisor.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    try:
+        result = BillingService.process_refund(
+            admin_id=admin.id,
+            invoice_id=int(invoice_id),
+            amount_cents=amount_cents,
+            reason=reason,
+            ip_address=request.remote_addr
+        )
+        flash(f'Refund of ${amount_cents/100:.2f} processed successfully.', 'success')
+    except BillingServiceError as e:
+        flash(f'Refund failed: {str(e)}', 'error')
+    except Exception as e:
+        logger.error(f"Refund error: {e}")
+        flash('An error occurred processing the refund.', 'error')
+
+    return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+
+@admin_bp.route('/customers/<int:customer_id>/billing/credit', methods=['POST'])
+@admin_required
+@require_billing_write
+def apply_credit(customer_id):
+    """Apply a credit to a customer account"""
+    admin = get_current_admin()
+
+    amount_str = request.form.get('amount', '0')
+    reason = request.form.get('reason', '').strip()
+
+    if not reason:
+        flash('Credit reason is required.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    try:
+        amount_cents = int(float(amount_str) * 100)
+    except ValueError:
+        flash('Invalid credit amount.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    if amount_cents <= 0:
+        flash('Credit amount must be positive.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    try:
+        result = BillingService.apply_credit(
+            admin_id=admin.id,
+            customer_id=customer_id,
+            amount_cents=amount_cents,
+            reason=reason,
+            ip_address=request.remote_addr
+        )
+        flash(f'Credit of ${amount_cents/100:.2f} applied successfully.', 'success')
+    except BillingServiceError as e:
+        flash(f'Failed to apply credit: {str(e)}', 'error')
+    except Exception as e:
+        logger.error(f"Credit error: {e}")
+        flash('An error occurred applying the credit.', 'error')
+
+    return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+
+@admin_bp.route('/customers/<int:customer_id>/billing/retry-payment', methods=['POST'])
+@admin_required
+def retry_payment(customer_id):
+    """Retry a failed payment"""
+    admin = get_current_admin()
+    role = session.get('admin_user_role')
+
+    # Check permission - support, admin, and super_admin can retry payments
+    if role not in ['support', 'admin', 'super_admin']:
+        flash('You do not have permission to retry payments.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    invoice_id = request.form.get('invoice_id')
+    if not invoice_id:
+        flash('Please select an invoice.', 'error')
+        return redirect(url_for('admin.customer_detail', customer_id=customer_id))
+
+    try:
+        result = BillingService.retry_payment(
+            admin_id=admin.id,
+            invoice_id=int(invoice_id),
+            ip_address=request.remote_addr
+        )
+        if result.get('paid'):
+            flash('Payment retry successful! Invoice is now paid.', 'success')
+        else:
+            flash('Payment retry initiated. Check status for updates.', 'info')
+    except BillingServiceError as e:
+        flash(f'Payment retry failed: {str(e)}', 'error')
+    except Exception as e:
+        logger.error(f"Payment retry error: {e}")
+        flash('An error occurred retrying the payment.', 'error')
+
+    return redirect(url_for('admin.customer_detail', customer_id=customer_id))

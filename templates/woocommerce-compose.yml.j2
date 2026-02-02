@@ -42,7 +42,7 @@ services:
           cpus: 0.25
 
   wordpress:
-    image: localhost:5001/wordpress:latest
+    image: localhost:5050/wordpress:latest
     container_name: {{ container_prefix }}-web
     restart: unless-stopped
     depends_on:

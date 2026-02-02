@@ -1,0 +1,110 @@
+{% extends "admin/base_admin.html" %}
+
+{% block title %}Catch-All Configuration{% endblock %}
+{% block page_title %}Catch-All Configuration{% endblock %}
+
+{% block content %}
+<div style="max-width: 600px;">
+    <a href="{{ url_for('admin.mail.dashboard') }}" class="btn btn-secondary btn-sm mb-4">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+        Back to Mail Dashboard
+    </a>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Catch-All Mailbox</h3>
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-4">
+                A catch-all mailbox receives all emails sent to non-existent addresses at your domain.
+                For example, if someone sends an email to <code style="color: var(--accent-cyan);">random@{{ mail_domain }}</code>
+                and that address doesn't exist, the catch-all mailbox will receive it.
+            </p>
+
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="set">
+
+                <div class="form-group">
+                    <label for="destination_id">Catch-All Mailbox</label>
+                    <select id="destination_id" name="destination_id" class="form-control">
+                        <option value="">Disabled (bounce unknown addresses)</option>
+                        {% for mailbox in mailboxes %}
+                        <option value="{{ mailbox.id }}" {% if catch_all and catch_all.destination_mailbox_id == mailbox.id %}selected{% endif %}>{{ mailbox.email }}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-muted" style="font-size: 0.85rem; margin-top: 6px;">
+                        Select which mailbox should receive emails sent to unknown addresses, or disable to bounce them.
+                    </p>
+                </div>
+
+                {% if catch_all %}
+                <div class="card mb-4" style="background: var(--info-muted); border-color: var(--border-accent);">
+                    <div class="card-body">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <svg width="24" height="24" fill="none" stroke="var(--accent-blue)" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+                            </svg>
+                            <div>
+                                <strong style="color: var(--accent-blue);">Catch-All Active</strong>
+                                <p class="text-muted mb-0" style="font-size: 0.85rem; margin-top: 4px;">
+                                    All emails to unknown addresses at @{{ mail_domain }} are being forwarded.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="card mb-4" style="background: var(--warning-muted); border-color: rgba(245, 158, 11, 0.3);">
+                    <div class="card-body">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <svg width="24" height="24" fill="none" stroke="var(--warning)" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                            </svg>
+                            <div>
+                                <strong style="color: var(--warning);">Catch-All Disabled</strong>
+                                <p class="text-muted mb-0" style="font-size: 0.85rem; margin-top: 4px;">
+                                    Emails to unknown addresses will be bounced back to the sender.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div style="display: flex; gap: 12px; margin-top: 24px;">
+                    <button type="submit" class="btn btn-primary">Save Configuration</button>
+                    <a href="{{ url_for('admin.mail.dashboard') }}" class="btn btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Info Card -->
+    <div class="card" style="margin-top: 24px;">
+        <div class="card-header">
+            <h3 class="card-title" style="font-size: 1rem;">About Catch-All</h3>
+        </div>
+        <div class="card-body">
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+                <div>
+                    <strong style="color: var(--success);">Pros:</strong>
+                    <ul style="margin: 8px 0 0 20px; color: var(--text-secondary);">
+                        <li>Never miss an email due to typos</li>
+                        <li>Use unique addresses for different services</li>
+                        <li>Easy to track where your email was shared</li>
+                    </ul>
+                </div>
+                <div>
+                    <strong style="color: var(--error);">Cons:</strong>
+                    <ul style="margin: 8px 0 0 20px; color: var(--text-secondary);">
+                        <li>May receive more spam</li>
+                        <li>All unknown addresses go to one mailbox</li>
+                        <li>Can fill up mailbox quota faster</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
