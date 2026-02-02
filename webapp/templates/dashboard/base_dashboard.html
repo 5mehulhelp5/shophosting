@@ -150,6 +150,11 @@
         box-shadow: var(--shadow-lg);
         align-items: center;
         justify-content: center;
+        transition: bottom 0.3s ease, transform 0.2s ease;
+    }
+
+    .sidebar-toggle:active {
+        transform: scale(0.95);
     }
 
     .sidebar-overlay {
@@ -158,12 +163,40 @@
         inset: 0;
         background: rgba(0, 0, 0, 0.6);
         z-index: 40;
+        backdrop-filter: blur(2px);
+        -webkit-backdrop-filter: blur(2px);
     }
 
-    /* Mobile Responsive */
-    @media (max-width: 768px) {
+    /* Sidebar scroll padding to prevent footer overlap */
+    .sidebar-nav {
+        padding-bottom: 80px; /* Space for toggle button clearance */
+    }
+
+    /* ================================================
+       TABLET LANDSCAPE (1024px and below)
+       Sidebar becomes collapsible but starts visible
+       ================================================ */
+    @media (max-width: 1024px) {
+        .dashboard-sidebar {
+            width: 220px;
+        }
+
+        .dashboard-main {
+            margin-left: 220px;
+            max-width: calc(100% - 220px);
+            padding: 24px 24px;
+        }
+    }
+
+    /* ================================================
+       TABLET PORTRAIT & LARGE PHONES (768px - 1024px)
+       Sidebar hidden by default, toggle visible
+       ================================================ */
+    @media (max-width: 900px) {
         .dashboard-sidebar {
             transform: translateX(-100%);
+            width: 280px;
+            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
         }
 
         .dashboard-sidebar.open {
@@ -173,7 +206,7 @@
         .dashboard-main {
             margin-left: 0;
             max-width: 100%;
-            padding: 24px 16px;
+            padding: 24px 20px;
         }
 
         .sidebar-toggle {
@@ -182,6 +215,169 @@
 
         .sidebar-overlay.open {
             display: block;
+        }
+    }
+
+    /* ================================================
+       MOBILE PHONES (768px and below)
+       Compact mobile layout
+       ================================================ */
+    @media (max-width: 768px) {
+        .dashboard-sidebar {
+            width: 260px;
+        }
+
+        .dashboard-main {
+            padding: 20px 16px;
+        }
+
+        .page-title {
+            font-size: 1.5rem;
+        }
+
+        .page-subtitle {
+            font-size: 0.875rem;
+        }
+    }
+
+    /* ================================================
+       SMALL PHONES (480px and below)
+       ================================================ */
+    @media (max-width: 480px) {
+        .dashboard-sidebar {
+            width: 100%;
+            max-width: 300px;
+        }
+
+        .dashboard-main {
+            padding: 16px 12px;
+        }
+
+        .sidebar-toggle {
+            width: 48px;
+            height: 48px;
+            bottom: 16px;
+            right: 16px;
+        }
+
+        .sidebar-toggle svg {
+            width: 20px;
+            height: 20px;
+        }
+    }
+
+    /* ================================================
+       LANDSCAPE ORIENTATION FIXES
+       Prevent footer from overlapping sidebar content
+       ================================================ */
+    @media (max-height: 500px) and (orientation: landscape) {
+        .dashboard-sidebar {
+            /* Account for shorter viewport in landscape */
+            padding-bottom: 0;
+        }
+
+        .sidebar-nav {
+            /* Reduce bottom padding in landscape to maximize space */
+            padding-bottom: 60px;
+            /* Enable momentum scrolling on touch devices */
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .sidebar-toggle {
+            /* Move toggle button higher in landscape to avoid footer */
+            bottom: 12px;
+            right: 12px;
+            width: 44px;
+            height: 44px;
+        }
+
+        .sidebar-toggle svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .nav-item {
+            padding: 10px 14px;
+            font-size: 0.85rem;
+        }
+
+        .nav-section-title {
+            padding: 6px 14px;
+            margin-top: 10px;
+        }
+    }
+
+    /* ================================================
+       TABLET LANDSCAPE SPECIFIC (height-constrained)
+       ================================================ */
+    @media (min-width: 768px) and (max-width: 1024px) and (orientation: landscape) {
+        .dashboard-sidebar {
+            width: 200px;
+        }
+
+        .dashboard-main {
+            margin-left: 200px;
+            max-width: calc(100% - 200px);
+        }
+
+        .sidebar-nav {
+            padding: 12px 8px 70px 8px;
+        }
+
+        .nav-item {
+            padding: 10px 12px;
+            gap: 10px;
+            font-size: 0.85rem;
+        }
+
+        .nav-item svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .sidebar-header {
+            padding: 14px 12px;
+        }
+    }
+
+    /* ================================================
+       PHONE LANDSCAPE (small height, wide width)
+       Sidebar overlay mode with compact items
+       ================================================ */
+    @media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
+        .dashboard-sidebar {
+            transform: translateX(-100%);
+            width: 240px;
+            top: 60px; /* Slightly smaller header offset */
+        }
+
+        .dashboard-sidebar.open {
+            transform: translateX(0);
+        }
+
+        .sidebar-nav {
+            padding: 8px;
+            padding-bottom: 50px;
+        }
+
+        .nav-item {
+            padding: 8px 12px;
+            font-size: 0.8rem;
+            margin-bottom: 1px;
+        }
+
+        .nav-section-title {
+            font-size: 0.65rem;
+            padding: 4px 12px;
+            margin-top: 8px;
+            margin-bottom: 2px;
+        }
+
+        .sidebar-toggle {
+            bottom: 8px;
+            right: 8px;
+            width: 40px;
+            height: 40px;
         }
     }
 
@@ -292,6 +488,9 @@
 
 {% block extra_js %}
 <script nonce="{{ csp_nonce() }}">
+    // Add dashboard class to body for footer styling (fallback for browsers without :has() support)
+    document.body.classList.add('has-dashboard-sidebar');
+
     // Mobile sidebar toggle
     const sidebar = document.getElementById('dashboard-sidebar');
     const overlay = document.getElementById('sidebar-overlay');
@@ -301,6 +500,8 @@
         toggle.addEventListener('click', () => {
             sidebar.classList.toggle('open');
             overlay.classList.toggle('open');
+            // Prevent body scroll when sidebar is open
+            document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : '';
         });
     }
 
@@ -308,8 +509,41 @@
         overlay.addEventListener('click', () => {
             sidebar.classList.remove('open');
             overlay.classList.remove('open');
+            document.body.style.overflow = '';
         });
     }
+
+    // Close sidebar on escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && sidebar && sidebar.classList.contains('open')) {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('open');
+            document.body.style.overflow = '';
+        }
+    });
+
+    // Handle orientation change - close sidebar and reset
+    window.addEventListener('orientationchange', () => {
+        setTimeout(() => {
+            if (sidebar) sidebar.classList.remove('open');
+            if (overlay) overlay.classList.remove('open');
+            document.body.style.overflow = '';
+        }, 100);
+    });
+
+    // Handle resize - show/hide sidebar appropriately
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            if (window.innerWidth > 900) {
+                // Desktop: ensure sidebar is visible and overlay hidden
+                if (sidebar) sidebar.classList.remove('open');
+                if (overlay) overlay.classList.remove('open');
+                document.body.style.overflow = '';
+            }
+        }, 150);
+    });
 </script>
 {% block dashboard_js_block %}
 <script nonce="{{ csp_nonce() }}">

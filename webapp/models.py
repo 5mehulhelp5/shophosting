@@ -180,7 +180,10 @@ class Customer:
                  error_message=None, stripe_customer_id=None, plan_id=None,
                  staging_count=None, password_changed_at=None, timezone=None,
                  suspension_reason=None, suspended_at=None, auto_suspended=False,
-                 reactivated_at=None, created_at=None, updated_at=None):
+                 reactivated_at=None, created_at=None, updated_at=None,
+                 automation_level=None, automation_exceptions=None,
+                 last_health_score=None, health_score_updated_at=None,
+                 email_notifications_enabled=None, notification_email=None):
         self.id = id
         self.email = email
         self.password_hash = password_hash
@@ -209,6 +212,14 @@ class Customer:
         self.reactivated_at = reactivated_at
         self.created_at = created_at or datetime.now()
         self.updated_at = updated_at or datetime.now()
+        # Performance optimization fields
+        self.automation_level = automation_level if automation_level is not None else 2
+        self.automation_exceptions = automation_exceptions
+        self.last_health_score = last_health_score
+        self.health_score_updated_at = health_score_updated_at
+        # Notification preferences
+        self.email_notifications_enabled = email_notifications_enabled if email_notifications_enabled is not None else True
+        self.notification_email = notification_email  # Optional alternate email for notifications
 
     # =========================================================================
     # Password Methods
