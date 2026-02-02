@@ -183,7 +183,7 @@ class Customer:
                  reactivated_at=None, created_at=None, updated_at=None,
                  automation_level=None, automation_exceptions=None,
                  last_health_score=None, health_score_updated_at=None,
-                 email_notifications_enabled=None):
+                 email_notifications_enabled=None, notification_email=None):
         self.id = id
         self.email = email
         self.password_hash = password_hash
@@ -219,6 +219,7 @@ class Customer:
         self.health_score_updated_at = health_score_updated_at
         # Notification preferences
         self.email_notifications_enabled = email_notifications_enabled if email_notifications_enabled is not None else True
+        self.notification_email = notification_email  # Optional alternate email for notifications
 
     # =========================================================================
     # Password Methods
