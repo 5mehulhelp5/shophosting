@@ -130,6 +130,7 @@ class EmailService:
         """Send welcome email when store is provisioned"""
         platform_title = platform.title()
         admin_url = f"https://{domain}/wp-admin" if platform == 'woocommerce' else f"https://{domain}/admin"
+        setup_guide_url = "https://docs.shophosting.io/en/customer-guide/woocommerce-setup" if platform == 'woocommerce' else "https://docs.shophosting.io/en/customer-guide/magento-setup"
 
         content = f'''
             <h1 style="margin: 0 0 24px 0; color: #f4f4f6; font-size: 24px; font-weight: 600;">
@@ -183,6 +184,20 @@ class EmailService:
                 </tr>
             </table>
 
+            <!-- Getting Started section -->
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: rgba(0, 136, 255, 0.1); border-radius: 10px; border: 1px solid rgba(0, 136, 255, 0.2); margin-bottom: 24px;">
+                <tr>
+                    <td style="padding: 20px;">
+                        <p style="margin: 0 0 8px 0; color: #0088ff; font-size: 14px; font-weight: 600;">
+                            Getting Started
+                        </p>
+                        <p style="margin: 0; color: #a1a1aa; font-size: 14px; line-height: 1.5;">
+                            New to {platform_title}? Check out our <a href="{setup_guide_url}" style="color: #0088ff; text-decoration: underline;">{platform_title} Setup Guide</a> for step-by-step instructions on configuring your store.
+                        </p>
+                    </td>
+                </tr>
+            </table>
+
             <!-- CTA Button -->
             <table role="presentation" cellspacing="0" cellpadding="0" border="0">
                 <tr>
@@ -205,6 +220,10 @@ Username: {admin_user}
 Password: {admin_password}
 
 Important: Please change your password after your first login.
+
+Getting Started:
+New to {platform_title}? Check out our setup guide for step-by-step instructions:
+{setup_guide_url}
 
 If you have any questions, contact support@shophosting.io
 
