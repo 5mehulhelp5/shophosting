@@ -137,7 +137,7 @@ class ActionLogger:
         """Get database connection"""
         if self._get_db_connection:
             return self._get_db_connection()
-        from models import get_db_connection
+        from webapp.models import get_db_connection
         return get_db_connection(read_only=read_only)
 
     def log_action(

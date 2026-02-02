@@ -200,7 +200,7 @@ class HealthScoreCalculator:
         """Get database connection"""
         if self._get_db_connection:
             return self._get_db_connection()
-        from models import get_db_connection
+        from webapp.models import get_db_connection
         return get_db_connection(read_only=True)
 
     def calculate(self, customer_id: int) -> HealthScoreResult:
