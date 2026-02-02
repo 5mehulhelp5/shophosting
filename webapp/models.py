@@ -127,7 +127,10 @@ class Customer:
                  domain=None, platform=None, status='pending', web_port=None,
                  db_name=None, db_user=None, db_password=None,
                  admin_user=None, admin_password=None, error_message=None,
-                 stripe_customer_id=None, plan_id=None,
+                 stripe_customer_id=None, plan_id=None, server_id=None,
+                 quota_project_id=None, staging_count=0, password_changed_at=None,
+                 timezone='America/New_York', suspension_reason=None, suspended_at=None,
+                 auto_suspended=False, reactivated_at=None,
                  created_at=None, updated_at=None):
         self.id = id
         self.email = email
@@ -145,6 +148,15 @@ class Customer:
         self.error_message = error_message
         self.stripe_customer_id = stripe_customer_id
         self.plan_id = plan_id
+        self.server_id = server_id
+        self.quota_project_id = quota_project_id
+        self.staging_count = staging_count
+        self.password_changed_at = password_changed_at
+        self.timezone = timezone
+        self.suspension_reason = suspension_reason
+        self.suspended_at = suspended_at
+        self.auto_suspended = auto_suspended
+        self.reactivated_at = reactivated_at
         self.created_at = created_at or datetime.now()
         self.updated_at = updated_at or datetime.now()
 

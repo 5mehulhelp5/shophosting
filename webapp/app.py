@@ -258,24 +258,25 @@ def check_session_timeout():
                 return redirect(url_for('login'))
         session['last_activity'] = time.time()
 
-    # Check for admin session timeout
-    admin_id = session.get('admin_user_id')
-    if admin_id:
-        last_admin_activity = session.get('admin_last_activity')
-        if last_admin_activity:
-            idle_time = time.time() - last_admin_activity
-            if idle_time > SESSION_IDLE_TIMEOUT:
-                security_logger.info(
-                    f"ADMIN_SESSION_TIMEOUT: admin_id={admin_id} "
-                    f"idle_time={idle_time:.0f}s IP={request.remote_addr}"
-                )
-                session.pop('admin_user_id', None)
-                session.pop('admin_user_name', None)
-                session.pop('admin_user_role', None)
-                session.pop('admin_last_activity', None)
-                flash('Your admin session has expired due to inactivity. Please log in again.', 'info')
-                return redirect(url_for('admin.login'))
-        session['admin_last_activity'] = time.time()
+    # Check for admin session timeout (only on admin routes)
+    if request.endpoint and request.endpoint.startswith('admin.'):
+        admin_id = session.get('admin_user_id')
+        if admin_id:
+            last_admin_activity = session.get('admin_last_activity')
+            if last_admin_activity:
+                idle_time = time.time() - last_admin_activity
+                if idle_time > SESSION_IDLE_TIMEOUT:
+                    security_logger.info(
+                        f"ADMIN_SESSION_TIMEOUT: admin_id={admin_id} "
+                        f"idle_time={idle_time:.0f}s IP={request.remote_addr}"
+                    )
+                    session.pop('admin_user_id', None)
+                    session.pop('admin_user_name', None)
+                    session.pop('admin_user_role', None)
+                    session.pop('admin_last_activity', None)
+                    flash('Your admin session has expired due to inactivity. Please log in again.', 'info')
+                    return redirect(url_for('admin.login'))
+            session['admin_last_activity'] = time.time()
 
 
 @app.before_request

@@ -26,8 +26,15 @@ load_env() {
                 continue
             fi
             # Export the variable if it looks like KEY=value
-            if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*=.*$ ]]; then
-                export "$line"
+            if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+                key="${BASH_REMATCH[1]}"
+                value="${BASH_REMATCH[2]}"
+                # Strip surrounding quotes (single or double)
+                value="${value#\'}"
+                value="${value%\'}"
+                value="${value#\"}"
+                value="${value%\"}"
+                export "$key=$value"
             fi
         done < /opt/shophosting/.env
     fi

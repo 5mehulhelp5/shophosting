@@ -32,8 +32,15 @@ load_env() {
             if [[ "$line" =~ ^#.*$ ]] || [[ -z "${line// }" ]]; then
                 continue
             fi
-            if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*=.*$ ]]; then
-                export "$line"
+            if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+                key="${BASH_REMATCH[1]}"
+                value="${BASH_REMATCH[2]}"
+                # Strip surrounding quotes (single or double)
+                value="${value#\'}"
+                value="${value%\'}"
+                value="${value#\"}"
+                value="${value%\"}"
+                export "$key=$value"
             fi
         done < /opt/shophosting/.env
     fi
@@ -82,7 +89,7 @@ case "$PLATFORM" in
     woocommerce)
         # WordPress uses MySQL
         log "Backing up WordPress database..."
-        DB_CONTAINER="${CUSTOMER_ID}-wordpress"
+        DB_CONTAINER="customer-${CUSTOMER_ID}-db"
         if docker ps --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
             docker exec "$DB_CONTAINER" mysqldump -u root -p"${MYSQL_ROOT_PASSWORD:-rootpassword}" wordpress > "${DB_DUMP_DIR}/database.sql" 2>/dev/null || \
             docker exec "$DB_CONTAINER" mysqldump -u root -prootpassword wordpress > "${DB_DUMP_DIR}/database.sql" 2>/dev/null || \
@@ -94,7 +101,7 @@ case "$PLATFORM" in
     magento)
         # Magento uses MySQL
         log "Backing up Magento database..."
-        DB_CONTAINER="${CUSTOMER_ID}-mysql"
+        DB_CONTAINER="customer-${CUSTOMER_ID}-db"
         if docker ps --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
             docker exec "$DB_CONTAINER" mysqldump -u root -p"${MYSQL_ROOT_PASSWORD:-rootpassword}" magento > "${DB_DUMP_DIR}/database.sql" 2>/dev/null || \
             log "Warning: Could not backup database"
