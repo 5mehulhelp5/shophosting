@@ -18,6 +18,7 @@ from flask_wtf import FlaskForm
 from flask_wtf.csrf import CSRFProtect, CSRFError
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_caching import Cache
 from flask_talisman import Talisman
 from wtforms import StringField, PasswordField, SelectField, SubmitField, HiddenField, TextAreaField
 from werkzeug.utils import secure_filename
@@ -263,6 +264,42 @@ limiter = Limiter(
     strategy="fixed-window",
     enabled=not is_testing,  # Disable in test mode
 )
+
+
+# =============================================================================
+# Response Caching with Flask-Caching
+# =============================================================================
+
+# Configure cache to use Redis (same instance as rate limiter)
+cache = Cache(app, config={
+    'CACHE_TYPE': 'RedisCache',
+    'CACHE_REDIS_URL': redis_url.replace('redis+sentinel://', 'redis://') if 'sentinel' in redis_url else redis_url,
+    'CACHE_DEFAULT_TIMEOUT': 300,  # 5 minutes default
+    'CACHE_KEY_PREFIX': 'shophosting_cache:',
+})
+
+
+def cache_unless_authenticated(timeout=300):
+    """
+    Cache decorator that only caches for anonymous users.
+    Authenticated users always get fresh content.
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            # Skip cache for authenticated users
+            if current_user and current_user.is_authenticated:
+                return f(*args, **kwargs)
+            # Use cached version for anonymous users
+            cache_key = f"view:{request.path}"
+            cached = cache.get(cache_key)
+            if cached is not None:
+                return cached
+            result = f(*args, **kwargs)
+            cache.set(cache_key, result, timeout=timeout)
+            return result
+        return decorated_function
+    return decorator
 
 
 @app.errorhandler(429)
@@ -571,16 +608,18 @@ TICKET_UPLOAD_PATH = '/var/customers/tickets'
 
 
 # =============================================================================
-# Routes - Public
+# Routes - Public (cached for anonymous users)
 # =============================================================================
 
 @app.route('/')
+@cache_unless_authenticated(timeout=300)  # 5 min cache
 def index():
     """Landing page"""
     return render_template('index.html')
 
 
 @app.route('/pricing')
+@cache_unless_authenticated(timeout=60)  # 1 min cache (has dynamic pricing data)
 def pricing():
     """Pricing page - display all plans"""
     plans = PricingPlan.get_all_active()
@@ -588,18 +627,21 @@ def pricing():
 
 
 @app.route('/features')
+@cache_unless_authenticated(timeout=300)  # 5 min cache
 def features():
     """Features page"""
     return render_template('features.html')
 
 
 @app.route('/about')
+@cache_unless_authenticated(timeout=300)  # 5 min cache
 def about():
     """About us page"""
     return render_template('about.html')
 
 
 @app.route('/contact')
+@cache_unless_authenticated(timeout=300)  # 5 min cache
 def contact():
     """Contact us page"""
     return render_template('contact.html')
