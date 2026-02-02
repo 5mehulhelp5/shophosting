@@ -34,6 +34,10 @@ from typing import List, Optional
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv('/opt/shophosting/.env')
+
 from webapp.performance.detection import IssueDetector, DetectedIssue
 from webapp.performance.playbooks import execute_playbook_for_issue, PlaybookResult
 from webapp.performance.action_logger import ActionLogger
