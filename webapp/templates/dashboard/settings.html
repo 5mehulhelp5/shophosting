@@ -776,6 +776,89 @@
 <div class="settings-section">
     <h2 class="settings-section-title">Preferences</h2>
 
+    <!-- Automation Settings -->
+    <div class="settings-card" id="automation-settings-card">
+        <div class="settings-card-header">
+            <span class="settings-card-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2v4"/>
+                    <path d="M12 18v4"/>
+                    <path d="M4.93 4.93l2.83 2.83"/>
+                    <path d="M16.24 16.24l2.83 2.83"/>
+                    <path d="M2 12h4"/>
+                    <path d="M18 12h4"/>
+                    <path d="M4.93 19.07l2.83-2.83"/>
+                    <path d="M16.24 7.76l2.83-2.83"/>
+                </svg>
+                Automation Settings
+            </span>
+        </div>
+        <div class="settings-item" style="flex-direction: column; align-items: stretch; gap: 16px;">
+            <div class="settings-info">
+                <h3>Performance Automation Level</h3>
+                <p>Choose how the system should respond to detected performance issues</p>
+            </div>
+
+            <div class="automation-levels" id="automation-levels">
+                <!-- Level 1: Notify Only -->
+                <label class="automation-level-option" data-level="1">
+                    <input type="radio" name="automation_level" value="1" {% if customer.automation_level == 1 %}checked{% endif %}>
+                    <div class="automation-level-content">
+                        <div class="automation-level-header">
+                            <span class="automation-level-badge level-1">Level 1</span>
+                            <span class="automation-level-name">Notify Only</span>
+                        </div>
+                        <p class="automation-level-desc">Detect issues and send alerts, but take no automatic action. You maintain full manual control over your store.</p>
+                        <div class="automation-level-actions">
+                            <span class="action-tag">Issue detection</span>
+                            <span class="action-tag">Email alerts</span>
+                            <span class="action-tag">Dashboard notifications</span>
+                        </div>
+                    </div>
+                </label>
+
+                <!-- Level 2: Safe Auto-Fix (Default) -->
+                <label class="automation-level-option" data-level="2">
+                    <input type="radio" name="automation_level" value="2" {% if customer.automation_level == 2 or customer.automation_level is none %}checked{% endif %}>
+                    <div class="automation-level-content">
+                        <div class="automation-level-header">
+                            <span class="automation-level-badge level-2">Level 2</span>
+                            <span class="automation-level-name">Safe Auto-Fix</span>
+                            <span class="recommended-badge">Recommended</span>
+                        </div>
+                        <p class="automation-level-desc">Automatically apply safe, reversible fixes. Notifies you after taking action. Best balance of automation and control.</p>
+                        <div class="automation-level-actions">
+                            <span class="action-tag">Cache clearing</span>
+                            <span class="action-tag">Log rotation</span>
+                            <span class="action-tag">Minor optimizations</span>
+                            <span class="action-tag">Automatic notifications</span>
+                        </div>
+                    </div>
+                </label>
+
+                <!-- Level 3: Full Auto -->
+                <label class="automation-level-option" data-level="3">
+                    <input type="radio" name="automation_level" value="3" {% if customer.automation_level == 3 %}checked{% endif %}>
+                    <div class="automation-level-content">
+                        <div class="automation-level-header">
+                            <span class="automation-level-badge level-3">Level 3</span>
+                            <span class="automation-level-name">Full Auto</span>
+                        </div>
+                        <p class="automation-level-desc">Aggressive optimization including container restarts and resource scaling. Best for hands-off management.</p>
+                        <div class="automation-level-actions">
+                            <span class="action-tag">Container restarts</span>
+                            <span class="action-tag">Resource scaling</span>
+                            <span class="action-tag">Database optimization</span>
+                            <span class="action-tag">All Level 2 actions</span>
+                        </div>
+                    </div>
+                </label>
+            </div>
+
+            <div id="automation-save-status" class="automation-save-status"></div>
+        </div>
+    </div>
+
     <div class="settings-card">
         <div class="settings-card-header">
             <span class="settings-card-title">
