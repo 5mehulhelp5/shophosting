@@ -198,12 +198,15 @@
             <div>
                 <div class="text-muted" style="font-size: 0.85rem; margin-bottom: 8px;">Container</div>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                    {% if monitoring_status.container_status == 'running' %}
+                    {% if monitoring_status.container_status == 'up' %}
                         <span style="width: 10px; height: 10px; background: var(--success); border-radius: 50%; display: inline-block;"></span>
                         <span style="color: var(--success); font-weight: 500;">Running</span>
-                    {% elif monitoring_status.container_status == 'stopped' %}
+                    {% elif monitoring_status.container_status == 'down' %}
                         <span style="width: 10px; height: 10px; background: var(--error); border-radius: 50%; display: inline-block;"></span>
                         <span style="color: var(--error); font-weight: 500;">Stopped</span>
+                    {% elif monitoring_status.container_status == 'degraded' %}
+                        <span style="width: 10px; height: 10px; background: var(--warning); border-radius: 50%; display: inline-block;"></span>
+                        <span style="color: var(--warning); font-weight: 500;">Degraded</span>
                     {% else %}
                         <span style="width: 10px; height: 10px; background: var(--text-muted); border-radius: 50%; display: inline-block;"></span>
                         <span class="text-muted">Unknown</span>

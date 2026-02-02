@@ -678,6 +678,381 @@
     background: var(--error);
 }
 
+/* ================================================
+   ADMIN CREDENTIALS VAULT
+   A secure-feeling credential reveal component
+   ================================================ */
+.credentials-vault {
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    border-radius: var(--radius-lg);
+    padding: 0;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 4px 24px rgba(0, 0, 0, 0.25),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.credentials-vault::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(99, 102, 241, 0.5) 20%,
+        rgba(168, 85, 247, 0.5) 50%,
+        rgba(99, 102, 241, 0.5) 80%,
+        transparent 100%);
+}
+
+.vault-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.vault-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+.vault-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #a78bfa;
+    transition: all 0.3s ease;
+}
+
+.vault-icon svg {
+    width: 20px;
+    height: 20px;
+    transition: transform 0.3s ease;
+}
+
+.credentials-vault.unlocked .vault-icon {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%);
+    border-color: rgba(34, 197, 94, 0.4);
+    color: #4ade80;
+}
+
+.credentials-vault.unlocked .vault-icon svg {
+    transform: rotate(-12deg);
+}
+
+.vault-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    background: rgba(99, 102, 241, 0.1);
+    color: #a5b4fc;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.vault-badge svg {
+    width: 12px;
+    height: 12px;
+}
+
+.credentials-vault.unlocked .vault-badge {
+    background: rgba(34, 197, 94, 0.1);
+    color: #86efac;
+    border-color: rgba(34, 197, 94, 0.2);
+}
+
+/* Vault Content - Locked State */
+.vault-locked {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 24px;
+    text-align: center;
+}
+
+.vault-locked-message {
+    color: var(--text-tertiary);
+    font-size: 0.9rem;
+    margin-bottom: 20px;
+    max-width: 280px;
+    line-height: 1.5;
+}
+
+.vault-unlock-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 28px;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow:
+        0 4px 16px rgba(99, 102, 241, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    position: relative;
+    overflow: hidden;
+}
+
+.vault-unlock-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.vault-unlock-btn:hover {
+    transform: translateY(-2px);
+    box-shadow:
+        0 8px 24px rgba(99, 102, 241, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.vault-unlock-btn:hover::before {
+    opacity: 1;
+}
+
+.vault-unlock-btn:active {
+    transform: translateY(0);
+}
+
+.vault-unlock-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Vault Content - Unlocked State */
+.vault-unlocked {
+    display: none;
+    padding: 24px;
+}
+
+.credentials-vault.unlocked .vault-locked {
+    display: none;
+}
+
+.credentials-vault.unlocked .vault-unlocked {
+    display: block;
+    animation: vaultReveal 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes vaultReveal {
+    0% {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.credential-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    transition: all 0.2s ease;
+}
+
+.credential-row:last-child {
+    margin-bottom: 0;
+}
+
+.credential-row:hover {
+    background: rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.credential-label {
+    flex: 0 0 100px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+}
+
+.credential-value {
+    flex: 1;
+    font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.03);
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    word-break: break-all;
+}
+
+.credential-value a {
+    color: #93c5fd;
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+.credential-value a:hover {
+    color: #bfdbfe;
+    text-decoration: underline;
+}
+
+.credential-copy {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.credential-copy:hover {
+    background: rgba(99, 102, 241, 0.2);
+    border-color: rgba(99, 102, 241, 0.4);
+    color: #a5b4fc;
+}
+
+.credential-copy.copied {
+    background: rgba(34, 197, 94, 0.2);
+    border-color: rgba(34, 197, 94, 0.4);
+    color: #4ade80;
+}
+
+.credential-copy svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* Vault Footer */
+.vault-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    background: rgba(0, 0, 0, 0.15);
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.vault-timer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.vault-timer svg {
+    width: 14px;
+    height: 14px;
+}
+
+.vault-timer-bar {
+    width: 80px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.vault-timer-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #6366f1, #8b5cf6);
+    border-radius: 2px;
+    transition: width 1s linear;
+}
+
+.vault-lock-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.vault-lock-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+}
+
+.vault-lock-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+    .vault-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .credential-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+
+    .credential-label {
+        flex: none;
+    }
+
+    .credential-value {
+        font-size: 0.85rem;
+    }
+
+    .vault-footer {
+        flex-direction: column;
+        gap: 12px;
+    }
+}
+
 /* Store Details Card */
 .details-card {
     background: var(--bg-elevated);
@@ -923,6 +1298,98 @@
         </div>
     </div>
 </div>
+
+<!-- Admin Credentials Vault -->
+{% if credentials and credentials.admin_user %}
+<div class="credentials-vault" id="credentials-vault">
+    <div class="vault-header">
+        <div class="vault-title">
+            <div class="vault-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+            </div>
+            <span>{{ 'WordPress' if customer.platform == 'woocommerce' else 'Magento' }} Admin Credentials</span>
+        </div>
+        <div class="vault-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            <span class="vault-status-text">Secured</span>
+        </div>
+    </div>
+
+    <!-- Locked State -->
+    <div class="vault-locked">
+        <p class="vault-locked-message">Your admin credentials are securely stored. Click below to reveal them temporarily.</p>
+        <button class="vault-unlock-btn" id="vault-unlock-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+            </svg>
+            Reveal Credentials
+        </button>
+    </div>
+
+    <!-- Unlocked State -->
+    <div class="vault-unlocked">
+        <div class="credential-row">
+            <span class="credential-label">Admin URL</span>
+            <div class="credential-value">
+                <a href="{{ credentials.admin_url }}" target="_blank" rel="noopener">{{ credentials.admin_url }}</a>
+            </div>
+            <button class="credential-copy" data-copy="{{ credentials.admin_url }}" title="Copy to clipboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="credential-row">
+            <span class="credential-label">Username</span>
+            <div class="credential-value" id="admin-username">{{ credentials.admin_user }}</div>
+            <button class="credential-copy" data-copy="{{ credentials.admin_user }}" title="Copy to clipboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+            </button>
+        </div>
+        <div class="credential-row">
+            <span class="credential-label">Password</span>
+            <div class="credential-value" id="admin-password">{{ credentials.admin_password }}</div>
+            <button class="credential-copy" data-copy="{{ credentials.admin_password }}" title="Copy to clipboard">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Footer with timer -->
+    <div class="vault-footer" style="display: none;">
+        <div class="vault-timer">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            <span>Auto-lock in <span id="vault-countdown">60</span>s</span>
+            <div class="vault-timer-bar">
+                <div class="vault-timer-fill" id="vault-timer-fill" style="width: 100%"></div>
+            </div>
+        </div>
+        <button class="vault-lock-btn" id="vault-lock-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            Lock Now
+        </button>
+    </div>
+</div>
+{% endif %}
 
 <!-- Store Details -->
 <div class="details-card">
@@ -1539,5 +2006,145 @@
     setInterval(fetchContainerStatus, 10000);
     setInterval(fetchHealthScore, 60000);  // Refresh health score every minute
     setInterval(fetchInsights, 60000);  // Refresh insights every minute
+
+    // =========================================================================
+    // Admin Credentials Vault
+    // =========================================================================
+    (function() {
+        const vault = document.getElementById('credentials-vault');
+        if (!vault) return;  // No credentials vault on this page
+
+        const unlockBtn = document.getElementById('vault-unlock-btn');
+        const lockBtn = document.getElementById('vault-lock-btn');
+        const vaultFooter = vault.querySelector('.vault-footer');
+        const countdownEl = document.getElementById('vault-countdown');
+        const timerFill = document.getElementById('vault-timer-fill');
+        const statusText = vault.querySelector('.vault-status-text');
+        const copyButtons = vault.querySelectorAll('.credential-copy');
+
+        let autoLockTimer = null;
+        let countdownInterval = null;
+        const AUTO_LOCK_SECONDS = 60;
+
+        // Unlock the vault
+        function unlockVault() {
+            vault.classList.add('unlocked');
+            vaultFooter.style.display = 'flex';
+            if (statusText) statusText.textContent = 'Unlocked';
+            startAutoLockTimer();
+        }
+
+        // Lock the vault
+        function lockVault() {
+            vault.classList.remove('unlocked');
+            vaultFooter.style.display = 'none';
+            if (statusText) statusText.textContent = 'Secured';
+            clearAutoLockTimer();
+        }
+
+        // Start auto-lock countdown
+        function startAutoLockTimer() {
+            clearAutoLockTimer();
+            let remaining = AUTO_LOCK_SECONDS;
+
+            // Update UI immediately
+            if (countdownEl) countdownEl.textContent = remaining;
+            if (timerFill) timerFill.style.width = '100%';
+
+            countdownInterval = setInterval(function() {
+                remaining--;
+                if (countdownEl) countdownEl.textContent = remaining;
+                if (timerFill) {
+                    const percent = (remaining / AUTO_LOCK_SECONDS) * 100;
+                    timerFill.style.width = percent + '%';
+                }
+
+                if (remaining <= 0) {
+                    lockVault();
+                }
+            }, 1000);
+
+            autoLockTimer = setTimeout(function() {
+                lockVault();
+            }, AUTO_LOCK_SECONDS * 1000);
+        }
+
+        // Clear auto-lock timer
+        function clearAutoLockTimer() {
+            if (autoLockTimer) {
+                clearTimeout(autoLockTimer);
+                autoLockTimer = null;
+            }
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+            }
+        }
+
+        // Copy to clipboard
+        function copyToClipboard(text, button) {
+            navigator.clipboard.writeText(text).then(function() {
+                // Visual feedback
+                button.classList.add('copied');
+
+                // Change icon to checkmark
+                const originalSvg = button.innerHTML;
+                button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+                setTimeout(function() {
+                    button.classList.remove('copied');
+                    button.innerHTML = originalSvg;
+                }, 1500);
+            }).catch(function(err) {
+                console.error('Failed to copy:', err);
+                // Fallback for older browsers
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                try {
+                    document.execCommand('copy');
+                    button.classList.add('copied');
+                    setTimeout(function() {
+                        button.classList.remove('copied');
+                    }, 1500);
+                } catch (e) {
+                    console.error('Fallback copy failed:', e);
+                }
+                document.body.removeChild(textarea);
+            });
+        }
+
+        // Event listeners
+        if (unlockBtn) {
+            unlockBtn.addEventListener('click', unlockVault);
+        }
+
+        if (lockBtn) {
+            lockBtn.addEventListener('click', lockVault);
+        }
+
+        // Copy buttons
+        copyButtons.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                const textToCopy = this.getAttribute('data-copy');
+                if (textToCopy) {
+                    copyToClipboard(textToCopy, this);
+                }
+            });
+        });
+
+        // Reset timer on interaction within the vault
+        vault.addEventListener('click', function(e) {
+            if (vault.classList.contains('unlocked') &&
+                !e.target.closest('.vault-lock-btn') &&
+                !e.target.closest('.vault-unlock-btn')) {
+                // Reset timer on any interaction except lock/unlock buttons
+                startAutoLockTimer();
+            }
+        });
+    })();
 </script>
 {% endblock %}
