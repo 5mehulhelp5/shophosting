@@ -3,6 +3,280 @@
 {% block page_title %}Overview{% endblock %}
 
 {% block dashboard_css %}
+/* Health Score Widget */
+.health-score-widget {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+}
+
+.health-score-widget::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: var(--gradient-border);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.health-score-widget:hover::before {
+    opacity: 1;
+}
+
+.health-score-widget:hover {
+    box-shadow: var(--shadow-glow);
+}
+
+.health-score-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+
+.health-score-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.health-score-title svg {
+    color: var(--accent-cyan);
+}
+
+.health-score-refresh {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s ease;
+}
+
+.health-score-refresh:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.health-score-refresh.loading svg {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.health-score-content {
+    display: flex;
+    gap: 32px;
+    align-items: flex-start;
+}
+
+/* Circular Gauge */
+.health-gauge-container {
+    flex-shrink: 0;
+    text-align: center;
+}
+
+.health-gauge {
+    position: relative;
+    width: 140px;
+    height: 140px;
+}
+
+.health-gauge canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+.health-gauge-center {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+}
+
+.health-gauge-score {
+    font-size: 2.25rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-primary);
+}
+
+.health-gauge-label {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 4px;
+}
+
+.health-trend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    margin-top: 12px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.health-trend svg {
+    width: 16px;
+    height: 16px;
+}
+
+.health-trend.up {
+    color: var(--success);
+}
+
+.health-trend.down {
+    color: var(--error);
+}
+
+.health-trend.stable {
+    color: var(--text-muted);
+}
+
+/* Factors List */
+.health-factors {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.health-factor {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg-surface);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.health-factor:hover {
+    background: var(--bg-hover);
+}
+
+.health-factor-name {
+    flex: 1;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.health-factor-bar {
+    flex: 0 0 100px;
+    height: 6px;
+    background: var(--bg-deep);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.health-factor-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
+.health-factor-fill.green {
+    background: var(--success);
+}
+
+.health-factor-fill.yellow {
+    background: var(--warning);
+}
+
+.health-factor-fill.red {
+    background: var(--error);
+}
+
+.health-factor-fill.gray {
+    background: var(--text-muted);
+}
+
+.health-factor-score {
+    min-width: 32px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: right;
+    color: var(--text-primary);
+}
+
+/* Loading State */
+.health-score-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 140px;
+    color: var(--text-muted);
+}
+
+.health-score-loading::after {
+    content: '';
+    width: 24px;
+    height: 24px;
+    margin-left: 12px;
+    border: 2px solid var(--border-subtle);
+    border-top-color: var(--accent-cyan);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+/* Error State */
+.health-score-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 140px;
+    color: var(--text-muted);
+    text-align: center;
+    gap: 8px;
+}
+
+.health-score-error svg {
+    width: 32px;
+    height: 32px;
+    color: var(--error);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .health-score-content {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .health-factors {
+        width: 100%;
+    }
+
+    .health-factor-bar {
+        flex: 0 0 80px;
+    }
+}
+
 /* Quick Actions */
 .quick-actions {
     display: flex;
@@ -331,6 +605,29 @@
     </a>
 </div>
 
+<!-- Health Score Widget -->
+<div class="health-score-widget" id="health-score-widget">
+    <div class="health-score-header">
+        <h2 class="health-score-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+            </svg>
+            Health Score
+        </h2>
+        <button class="health-score-refresh" id="health-score-refresh" title="Refresh health score">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 4v6h-6"></path>
+                <path d="M1 20v-6h6"></path>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+        </button>
+    </div>
+
+    <div id="health-score-content">
+        <div class="health-score-loading">Loading health score...</div>
+    </div>
+</div>
+
 <!-- Stats Grid -->
 <div class="stats-grid">
     <!-- Status Card -->
@@ -433,9 +730,263 @@
 </div>
 {% endblock %}
 
-{% block dashboard_js %}
+{% block dashboard_js_block %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" nonce="{{ csp_nonce() }}"></script>
 <script nonce="{{ csp_nonce() }}">
     let restartCooldown = false;
+    let healthScoreChart = null;
+
+    // Factor display names
+    const factorNames = {
+        'page_speed': 'Page Speed',
+        'resource_usage': 'Resources',
+        'database_health': 'Database',
+        'cache_efficiency': 'Cache',
+        'uptime': 'Uptime'
+    };
+
+    // Fetch and render health score
+    async function fetchHealthScore() {
+        const contentEl = document.getElementById('health-score-content');
+        const refreshBtn = document.getElementById('health-score-refresh');
+
+        refreshBtn.classList.add('loading');
+
+        try {
+            const response = await fetch('/api/customer/health-score', {
+                credentials: 'same-origin'
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to fetch health score');
+            }
+
+            const data = await response.json();
+            renderHealthScore(data);
+        } catch (error) {
+            console.error('Failed to fetch health score:', error);
+            renderHealthScoreError(contentEl);
+        } finally {
+            refreshBtn.classList.remove('loading');
+        }
+    }
+
+    // Render error state using safe DOM methods
+    function renderHealthScoreError(container) {
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'health-score-error';
+
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '2');
+
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', '12');
+        circle.setAttribute('cy', '12');
+        circle.setAttribute('r', '10');
+        svg.appendChild(circle);
+
+        const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line1.setAttribute('x1', '12');
+        line1.setAttribute('y1', '8');
+        line1.setAttribute('x2', '12');
+        line1.setAttribute('y2', '12');
+        svg.appendChild(line1);
+
+        const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line2.setAttribute('x1', '12');
+        line2.setAttribute('y1', '16');
+        line2.setAttribute('x2', '12.01');
+        line2.setAttribute('y2', '16');
+        svg.appendChild(line2);
+
+        errorDiv.appendChild(svg);
+
+        const span = document.createElement('span');
+        span.textContent = 'Unable to load health score';
+        errorDiv.appendChild(span);
+
+        container.appendChild(errorDiv);
+    }
+
+    // Render the health score widget using safe DOM methods
+    function renderHealthScore(data) {
+        const contentEl = document.getElementById('health-score-content');
+        const score = data.score;
+        const color = data.color;
+        const trend = data.trend;
+        const factors = data.factors;
+
+        // Clear existing content
+        while (contentEl.firstChild) {
+            contentEl.removeChild(contentEl.firstChild);
+        }
+
+        // Get CSS color value for the score
+        const colorValue = getColorValue(color);
+
+        // Create main content container
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'health-score-content';
+
+        // Create gauge container
+        const gaugeContainer = document.createElement('div');
+        gaugeContainer.className = 'health-gauge-container';
+
+        const gauge = document.createElement('div');
+        gauge.className = 'health-gauge';
+
+        const canvas = document.createElement('canvas');
+        canvas.id = 'health-gauge-canvas';
+        gauge.appendChild(canvas);
+
+        const gaugeCenter = document.createElement('div');
+        gaugeCenter.className = 'health-gauge-center';
+
+        const scoreEl = document.createElement('div');
+        scoreEl.className = 'health-gauge-score';
+        scoreEl.style.color = colorValue;
+        scoreEl.textContent = score;
+        gaugeCenter.appendChild(scoreEl);
+
+        const labelEl = document.createElement('div');
+        labelEl.className = 'health-gauge-label';
+        labelEl.textContent = 'out of 100';
+        gaugeCenter.appendChild(labelEl);
+
+        gauge.appendChild(gaugeCenter);
+        gaugeContainer.appendChild(gauge);
+
+        // Create trend indicator
+        const trendDiv = document.createElement('div');
+        trendDiv.className = 'health-trend ' + trend;
+
+        const trendSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        trendSvg.setAttribute('viewBox', '0 0 24 24');
+        trendSvg.setAttribute('fill', 'none');
+        trendSvg.setAttribute('stroke', 'currentColor');
+        trendSvg.setAttribute('stroke-width', '2');
+
+        const trendPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        if (trend === 'up') {
+            trendPath.setAttribute('d', 'M12 19V5M5 12l7-7 7 7');
+        } else if (trend === 'down') {
+            trendPath.setAttribute('d', 'M12 5v14M19 12l-7 7-7-7');
+        } else {
+            trendPath.setAttribute('d', 'M5 12h14');
+        }
+        trendSvg.appendChild(trendPath);
+        trendDiv.appendChild(trendSvg);
+
+        const trendText = document.createElement('span');
+        if (trend === 'up') {
+            trendText.textContent = '+' + data.score_change + ' vs 24h ago';
+        } else if (trend === 'down') {
+            trendText.textContent = data.score_change + ' vs 24h ago';
+        } else {
+            trendText.textContent = 'Stable';
+        }
+        trendDiv.appendChild(trendText);
+        gaugeContainer.appendChild(trendDiv);
+
+        contentDiv.appendChild(gaugeContainer);
+
+        // Create factors list
+        const factorsDiv = document.createElement('div');
+        factorsDiv.className = 'health-factors';
+
+        for (const [key, factor] of Object.entries(factors)) {
+            const factorEl = document.createElement('div');
+            factorEl.className = 'health-factor';
+            factorEl.setAttribute('data-factor', key);
+            factorEl.title = 'Click for details (coming soon)';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'health-factor-name';
+            nameSpan.textContent = factorNames[key] || key;
+            factorEl.appendChild(nameSpan);
+
+            const barDiv = document.createElement('div');
+            barDiv.className = 'health-factor-bar';
+
+            const fillDiv = document.createElement('div');
+            fillDiv.className = 'health-factor-fill ' + (factor.color || 'gray');
+            fillDiv.style.width = (factor.data_available ? factor.score : 0) + '%';
+            barDiv.appendChild(fillDiv);
+            factorEl.appendChild(barDiv);
+
+            const scoreSpan = document.createElement('span');
+            scoreSpan.className = 'health-factor-score';
+            scoreSpan.textContent = factor.data_available ? factor.score : '--';
+            factorEl.appendChild(scoreSpan);
+
+            factorsDiv.appendChild(factorEl);
+        }
+
+        contentDiv.appendChild(factorsDiv);
+        contentEl.appendChild(contentDiv);
+
+        // Create the doughnut chart
+        createHealthGauge(score, color);
+    }
+
+    // Get CSS variable color value
+    function getColorValue(color) {
+        const colorMap = {
+            'green': '#22c55e',
+            'yellow': '#eab308',
+            'red': '#ef4444',
+            'gray': '#6b7280'
+        };
+        return colorMap[color] || colorMap['gray'];
+    }
+
+    // Create Chart.js doughnut gauge
+    function createHealthGauge(score, color) {
+        const canvas = document.getElementById('health-gauge-canvas');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const colorValue = getColorValue(color);
+
+        // Destroy previous chart if exists
+        if (healthScoreChart) {
+            healthScoreChart.destroy();
+        }
+
+        healthScoreChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [score, 100 - score],
+                    backgroundColor: [colorValue, 'rgba(255, 255, 255, 0.05)'],
+                    borderWidth: 0,
+                    cutout: '78%'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false }
+                },
+                rotation: -90,
+                circumference: 360,
+                animation: {
+                    animateRotate: true,
+                    duration: 1000
+                }
+            }
+        });
+    }
 
     // Fetch container status
     async function fetchContainerStatus() {
@@ -521,7 +1072,14 @@
 
     // Initialize
     document.getElementById('restart-btn').addEventListener('click', restartContainer);
+    document.getElementById('health-score-refresh').addEventListener('click', fetchHealthScore);
+
+    // Fetch initial data
     fetchContainerStatus();
+    fetchHealthScore();
+
+    // Refresh intervals
     setInterval(fetchContainerStatus, 10000);
+    setInterval(fetchHealthScore, 60000);  // Refresh health score every minute
 </script>
 {% endblock %}

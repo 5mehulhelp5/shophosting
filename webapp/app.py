@@ -2454,6 +2454,53 @@ def api_status():
     })
 
 
+@app.route('/api/customer/health-score')
+@login_required
+@limiter.limit("30 per minute")  # Allow reasonable polling
+def api_customer_health_score():
+    """
+    Get health score for the current customer.
+
+    Returns:
+        JSON with health score, trend, and factor breakdown:
+        {
+            "score": 85,
+            "status": "good",
+            "color": "green",
+            "trend": "up",
+            "previous_score": 82,
+            "score_change": 3,
+            "updated_at": "2026-02-01T12:00:00",
+            "factors": {
+                "page_speed": { "score": 90, "status": "excellent", ... },
+                "resource_usage": { "score": 82, ... },
+                ...
+            }
+        }
+    """
+    customer = Customer.get_by_id(current_user.id)
+
+    if not customer:
+        return jsonify({'error': 'Customer not found'}), 404
+
+    if customer.status != 'active':
+        return jsonify({
+            'error': 'Store not active',
+            'message': 'Health score is only available for active stores'
+        }), 400
+
+    try:
+        from performance.health_score import get_health_score_with_trend
+        result = get_health_score_with_trend(customer.id)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error calculating health score for customer {customer.id}: {e}")
+        return jsonify({
+            'error': 'Failed to calculate health score',
+            'message': str(e)
+        }), 500
+
+
 @app.route('/api/container/status')
 @login_required
 @limiter.limit("60 per minute")  # Allow frequent polling

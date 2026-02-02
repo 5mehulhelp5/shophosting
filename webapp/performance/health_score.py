@@ -862,3 +862,155 @@ def calculate_health_score(customer_id: int) -> Dict[str, Any]:
     calculator = HealthScoreCalculator()
     result = calculator.calculate(customer_id)
     return result.to_dict()
+
+
+def get_health_score_with_trend(customer_id: int) -> Dict[str, Any]:
+    """
+    Calculate health score for a customer including trend vs 24 hours ago.
+
+    This function extends calculate_health_score by adding:
+    - trend: 'up', 'down', or 'stable' compared to 24h ago
+    - previous_score: The score from ~24h ago (or None if not available)
+    - score_change: The numerical difference from previous score
+
+    Args:
+        customer_id: The customer ID to calculate score for
+
+    Returns:
+        Dictionary with score, trend information, and factor breakdown
+    """
+    calculator = HealthScoreCalculator()
+
+    # Get current score
+    current_result = calculator.calculate(customer_id)
+    result = current_result.to_dict()
+
+    # Rename for API consistency
+    result['score'] = result.pop('overall_score')
+    result['status'] = result.pop('overall_status')
+    result['color'] = result.pop('overall_color')
+    result['updated_at'] = result.pop('calculated_at')
+
+    # Get score from 24 hours ago
+    previous_score = _get_score_24h_ago(customer_id, calculator)
+
+    # Calculate trend
+    if previous_score is not None:
+        score_change = result['score'] - previous_score
+        if score_change > 2:
+            trend = 'up'
+        elif score_change < -2:
+            trend = 'down'
+        else:
+            trend = 'stable'
+        result['trend'] = trend
+        result['previous_score'] = previous_score
+        result['score_change'] = score_change
+    else:
+        result['trend'] = 'stable'  # No previous data, default to stable
+        result['previous_score'] = None
+        result['score_change'] = 0
+
+    return result
+
+
+def _get_score_24h_ago(customer_id: int, calculator: HealthScoreCalculator) -> Optional[int]:
+    """
+    Get the health score from approximately 24 hours ago.
+
+    Looks for a performance snapshot from ~24h ago and calculates
+    what the score would have been with that data.
+
+    Args:
+        customer_id: The customer ID
+        calculator: HealthScoreCalculator instance to use
+
+    Returns:
+        The health score from 24h ago, or None if no data available
+    """
+    conn = calculator._get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # Get snapshot from approximately 24 hours ago (within a 2 hour window)
+        cursor.execute("""
+            SELECT health_score FROM performance_snapshots
+            WHERE customer_id = %s
+              AND timestamp >= DATE_SUB(NOW(), INTERVAL 26 HOUR)
+              AND timestamp <= DATE_SUB(NOW(), INTERVAL 22 HOUR)
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (customer_id,))
+        row = cursor.fetchone()
+
+        if row and row.get('health_score') is not None:
+            return int(row['health_score'])
+
+        # If no snapshot with stored score, try to find one and calculate
+        # This is a fallback for older snapshots without pre-computed scores
+        cursor.execute("""
+            SELECT * FROM performance_snapshots
+            WHERE customer_id = %s
+              AND timestamp >= DATE_SUB(NOW(), INTERVAL 26 HOUR)
+              AND timestamp <= DATE_SUB(NOW(), INTERVAL 22 HOUR)
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (customer_id,))
+        snapshot = cursor.fetchone()
+
+        if not snapshot:
+            return None
+
+        # Calculate score from historical snapshot data
+        # This is a simplified calculation using available metrics
+        scores = []
+        weights = []
+
+        # Page speed metrics
+        if snapshot.get('ttfb_ms') is not None:
+            ttfb_score = calculator._metric_to_score(
+                snapshot['ttfb_ms'], TTFB_THRESHOLDS, lower_is_better=True
+            )
+            scores.append(ttfb_score)
+            weights.append(FACTOR_WEIGHTS['page_speed'])
+
+        # Resource usage
+        resource_scores = []
+        if snapshot.get('cpu_percent') is not None:
+            resource_scores.append(calculator._metric_to_score(
+                float(snapshot['cpu_percent']), RESOURCE_THRESHOLDS, lower_is_better=True
+            ))
+        if snapshot.get('memory_percent') is not None:
+            resource_scores.append(calculator._metric_to_score(
+                float(snapshot['memory_percent']), RESOURCE_THRESHOLDS, lower_is_better=True
+            ))
+        if resource_scores:
+            scores.append(sum(resource_scores) / len(resource_scores))
+            weights.append(FACTOR_WEIGHTS['resource_usage'])
+
+        # Database health
+        if snapshot.get('slow_query_count') is not None:
+            db_score = calculator._slow_query_to_score(snapshot['slow_query_count'])
+            scores.append(db_score)
+            weights.append(FACTOR_WEIGHTS['database_health'])
+
+        # Cache efficiency
+        if snapshot.get('redis_hit_rate') is not None:
+            cache_score = calculator._cache_hit_to_score(float(snapshot['redis_hit_rate']))
+            scores.append(cache_score)
+            weights.append(FACTOR_WEIGHTS['cache_efficiency'])
+
+        if not scores:
+            return None
+
+        # Calculate weighted average
+        total_weight = sum(weights)
+        weighted_score = sum(s * w for s, w in zip(scores, weights)) / total_weight
+        return int(round(weighted_score))
+
+    except Exception as e:
+        logger.error(f"Error getting 24h ago score for customer {customer_id}: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
