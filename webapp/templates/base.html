@@ -1646,10 +1646,7 @@
             </button>
             <nav id="mainNav">
                 {% if current_user.is_authenticated %}
-                    <a href="{{ url_for('dashboard') }}">Dashboard</a>
-                    <a href="{{ url_for('backups') }}">Backups</a>
-                    <a href="{{ url_for('billing') }}">Billing</a>
-                    <a href="{{ url_for('support_tickets') }}">Support</a>
+                    <a href="{{ url_for('dashboard_overview') }}">Dashboard</a>
                     <a href="{{ url_for('logout') }}">Logout</a>
                 {% else %}
                     <a href="{{ url_for('features') }}">Features</a>

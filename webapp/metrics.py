@@ -139,7 +139,7 @@ def generate_metrics():
     return '\n'.join(lines) + '\n'
 
 
-@metrics_bp.route('/metrics')
+@metrics_bp.route('/')
 def prometheus_metrics():
     """Prometheus metrics endpoint"""
     metrics = generate_metrics()

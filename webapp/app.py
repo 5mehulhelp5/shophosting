@@ -417,7 +417,7 @@ from metrics import metrics_bp
 app.register_blueprint(metrics_bp)
 
 # Register container metrics blueprint
-from container_metrics import container_metrics_bp
+from container_metrics import container_metrics_bp, start_background_collector
 app.register_blueprint(container_metrics_bp)
 
 # Register status blueprint for public status page
@@ -2462,11 +2462,14 @@ def api_container_status():
     import subprocess
 
     customer = Customer.get_by_id(current_user.id)
+    app.logger.info(f"Container status check for customer_id={current_user.id}")
 
     if not customer:
+        app.logger.warning(f"Customer not found: {current_user.id}")
         return jsonify({'error': 'Customer not found', 'status': 'error', 'running': False}), 404
 
     if customer.status != 'active':
+        app.logger.warning(f"Customer not active: {customer.id} status={customer.status}")
         return jsonify({'error': 'Store not active', 'status': 'error', 'running': False}), 400
 
     # Container name follows pattern: customer-{id}-web
@@ -2479,6 +2482,7 @@ def api_container_status():
              '{{.State.Status}} {{.State.Running}} {{.State.StartedAt}}'],
             capture_output=True, text=True, timeout=10
         )
+        app.logger.info(f"Docker inspect {container_name}: rc={result.returncode} stdout={result.stdout[:100]}")
 
         if result.returncode != 0:
             return jsonify({
@@ -2569,6 +2573,118 @@ def api_container_restart():
             'success': False,
             'message': f'Error: {str(e)}'
         }), 500
+
+
+@app.route('/api/container/metrics')
+@login_required
+@limiter.limit("60 per minute")
+def api_container_metrics():
+    """Get container metrics from Prometheus for current customer"""
+    import requests
+    from datetime import datetime, timedelta
+
+    customer = Customer.get_by_id(current_user.id)
+
+    if not customer:
+        return jsonify({'error': 'Customer not found'}), 404
+
+    if customer.status != 'active':
+        return jsonify({'error': 'Store not active'}), 400
+
+    customer_id = customer.id
+    prometheus_url = "http://127.0.0.1:9090"
+
+    # Time range: last hour with 2-minute steps for sparklines
+    end_time = datetime.now()
+    start_time = end_time - timedelta(hours=1)
+    step = "2m"
+
+    def query_prometheus(query):
+        """Query Prometheus and return data points"""
+        try:
+            response = requests.get(
+                f"{prometheus_url}/api/v1/query_range",
+                params={
+                    'query': query,
+                    'start': start_time.timestamp(),
+                    'end': end_time.timestamp(),
+                    'step': step
+                },
+                timeout=5
+            )
+            data = response.json()
+            if data['status'] == 'success' and data['data']['result']:
+                # Return list of [timestamp, value] pairs
+                values = data['data']['result'][0]['values']
+                return [float(v[1]) for v in values]
+            return []
+        except Exception as e:
+            app.logger.error(f"Prometheus query error: {e}")
+            return []
+
+    def query_instant(query):
+        """Query Prometheus for instant value"""
+        try:
+            response = requests.get(
+                f"{prometheus_url}/api/v1/query",
+                params={'query': query},
+                timeout=5
+            )
+            data = response.json()
+            if data['status'] == 'success' and data['data']['result']:
+                return float(data['data']['result'][0]['value'][1])
+            return 0
+        except Exception as e:
+            app.logger.error(f"Prometheus instant query error: {e}")
+            return 0
+
+    # Query metrics for this customer's containers
+    container_filter = f'customer_id="{customer_id}"'
+
+    # CPU usage (average across all container types for this customer)
+    cpu_query = f'avg(container_cpu_usage_percent{{{container_filter}}})'
+    cpu_data = query_prometheus(cpu_query)
+    cpu_current = query_instant(cpu_query)
+
+    # Memory usage percentage
+    mem_query = f'avg(container_memory_usage_percent{{{container_filter}}})'
+    mem_data = query_prometheus(mem_query)
+    mem_current = query_instant(mem_query)
+
+    # Memory in MB
+    mem_mb_query = f'sum(container_memory_usage_bytes{{{container_filter}}}) / 1024 / 1024'
+    mem_mb_current = query_instant(mem_mb_query)
+
+    mem_limit_query = f'sum(container_memory_limit_bytes{{{container_filter}}}) / 1024 / 1024'
+    mem_limit = query_instant(mem_limit_query)
+
+    # Network I/O (rate per second over 5m)
+    net_rx_query = f'sum(rate(container_network_rx_bytes{{{container_filter}}}[5m]))'
+    net_tx_query = f'sum(rate(container_network_tx_bytes{{{container_filter}}}[5m]))'
+    net_rx_data = query_prometheus(net_rx_query)
+    net_tx_data = query_prometheus(net_tx_query)
+    net_rx_current = query_instant(net_rx_query)
+    net_tx_current = query_instant(net_tx_query)
+
+    return jsonify({
+        'cpu': {
+            'current': round(cpu_current, 1),
+            'data': [round(v, 1) for v in cpu_data[-30:]]  # Last 30 points
+        },
+        'memory': {
+            'current': round(mem_current, 1),
+            'used_mb': round(mem_mb_current, 0),
+            'limit_mb': round(mem_limit, 0),
+            'data': [round(v, 1) for v in mem_data[-30:]]
+        },
+        'network': {
+            'rx_bytes_sec': round(net_rx_current, 0),
+            'tx_bytes_sec': round(net_tx_current, 0),
+            'rx_data': [round(v, 0) for v in net_rx_data[-30:]],
+            'tx_data': [round(v, 0) for v in net_tx_data[-30:]]
+        },
+        'timestamp': end_time.isoformat()
+    })
 
 
 @app.route('/api/container/logs')
