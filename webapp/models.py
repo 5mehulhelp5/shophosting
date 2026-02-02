@@ -180,7 +180,10 @@ class Customer:
                  error_message=None, stripe_customer_id=None, plan_id=None,
                  staging_count=None, password_changed_at=None, timezone=None,
                  suspension_reason=None, suspended_at=None, auto_suspended=False,
-                 reactivated_at=None, created_at=None, updated_at=None):
+                 reactivated_at=None, created_at=None, updated_at=None,
+                 automation_level=None, automation_exceptions=None,
+                 last_health_score=None, health_score_updated_at=None,
+                 email_notifications_enabled=None, notification_email=None):
         self.id = id
         self.email = email
         self.password_hash = password_hash
@@ -209,6 +212,14 @@ class Customer:
         self.reactivated_at = reactivated_at
         self.created_at = created_at or datetime.now()
         self.updated_at = updated_at or datetime.now()
+        # Performance optimization fields
+        self.automation_level = automation_level if automation_level is not None else 2
+        self.automation_exceptions = automation_exceptions
+        self.last_health_score = last_health_score
+        self.health_score_updated_at = health_score_updated_at
+        # Notification preferences
+        self.email_notifications_enabled = email_notifications_enabled if email_notifications_enabled is not None else True
+        self.notification_email = notification_email  # Optional alternate email for notifications
 
     # =========================================================================
     # Password Methods
@@ -277,6 +288,67 @@ class Customer:
         finally:
             cursor.close()
             conn.close()
+
+    def update_automation_preferences(self, automation_level):
+        """
+        Update customer automation preferences.
+
+        Args:
+            automation_level: Integer 1-3 representing automation level:
+                1 = Notify Only - Detect issues, send alerts, take no action
+                2 = Safe Auto-Fix - Apply reversible fixes automatically (DEFAULT)
+                3 = Full Auto - Aggressive optimization including restarts, scaling
+
+        Returns:
+            True if update succeeded, False otherwise
+        """
+        if automation_level not in [1, 2, 3]:
+            raise ValueError("automation_level must be 1, 2, or 3")
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE customers SET automation_level = %s, updated_at = NOW() WHERE id = %s
+            """, (automation_level, self.id))
+            conn.commit()
+            self.automation_level = automation_level
+            return cursor.rowcount > 0
+        finally:
+            cursor.close()
+            conn.close()
+
+    def get_automation_preferences(self):
+        """
+        Get customer automation preferences.
+
+        Returns:
+            Dictionary with automation_level and description
+        """
+        level = self.automation_level if self.automation_level is not None else 2
+
+        levels = {
+            1: {
+                'level': 1,
+                'name': 'Notify Only',
+                'description': 'Detect issues and send alerts, but take no automatic action. You maintain full manual control.',
+                'actions': ['Issue detection', 'Email alerts', 'Dashboard notifications']
+            },
+            2: {
+                'level': 2,
+                'name': 'Safe Auto-Fix',
+                'description': 'Automatically apply safe, reversible fixes. Notifies you after taking action. Recommended for most users.',
+                'actions': ['Cache clearing', 'Log rotation', 'Minor optimizations', 'Automatic notifications']
+            },
+            3: {
+                'level': 3,
+                'name': 'Full Auto',
+                'description': 'Aggressive optimization including container restarts and resource scaling. Best for hands-off management.',
+                'actions': ['Container restarts', 'Resource scaling', 'Database optimization', 'All Level 2 actions']
+            }
+        }
+
+        return levels.get(level, levels[2])
 
     # =========================================================================
     # Flask-Login Required Properties

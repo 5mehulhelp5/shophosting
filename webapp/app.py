@@ -2454,6 +2454,309 @@ def api_status():
     })
 
 
+@app.route('/api/customer/health-score')
+@login_required
+@limiter.limit("30 per minute")  # Allow reasonable polling
+def api_customer_health_score():
+    """
+    Get health score for the current customer.
+
+    Returns:
+        JSON with health score, trend, and factor breakdown:
+        {
+            "score": 85,
+            "status": "good",
+            "color": "green",
+            "trend": "up",
+            "previous_score": 82,
+            "score_change": 3,
+            "updated_at": "2026-02-01T12:00:00",
+            "factors": {
+                "page_speed": { "score": 90, "status": "excellent", ... },
+                "resource_usage": { "score": 82, ... },
+                ...
+            }
+        }
+    """
+    customer = Customer.get_by_id(current_user.id)
+
+    if not customer:
+        return jsonify({'error': 'Customer not found'}), 404
+
+    if customer.status != 'active':
+        return jsonify({
+            'error': 'Store not active',
+            'message': 'Health score is only available for active stores'
+        }), 400
+
+    try:
+        from performance.health_score import get_health_score_with_trend
+        result = get_health_score_with_trend(customer.id)
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error calculating health score for customer {customer.id}: {e}")
+        return jsonify({
+            'error': 'Failed to calculate health score',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/customer/insights')
+@login_required
+@limiter.limit("30 per minute")  # Allow reasonable polling
+def api_customer_insights():
+    """
+    Get performance insights for the current customer.
+
+    Query params:
+        limit: Maximum number of insights to return (default: 10, max: 50)
+
+    Returns:
+        JSON with list of insights:
+        {
+            "insights": [
+                {
+                    "id": "issue-123",
+                    "type": "warning",
+                    "title": "Slow database queries detected",
+                    "message": "3 queries averaging >2s",
+                    "timestamp": "2026-02-01T12:00:00",
+                    "relative_time": "2 min ago",
+                    "details": {...},
+                    "issue_id": 123
+                },
+                ...
+            ],
+            "count": 5
+        }
+    """
+    customer = Customer.get_by_id(current_user.id)
+
+    if not customer:
+        return jsonify({'error': 'Customer not found'}), 404
+
+    if customer.status != 'active':
+        return jsonify({
+            'error': 'Store not active',
+            'message': 'Insights are only available for active stores'
+        }), 400
+
+    # Get limit from query params, with validation
+    try:
+        limit = int(request.args.get('limit', 10))
+        limit = max(1, min(limit, 50))  # Clamp between 1 and 50
+    except (TypeError, ValueError):
+        limit = 10
+
+    try:
+        from performance.insights import get_performance_insights
+        insights = get_performance_insights(customer.id, limit=limit)
+        return jsonify({
+            'insights': insights,
+            'count': len(insights)
+        })
+    except Exception as e:
+        logger.error(f"Error fetching insights for customer {customer.id}: {e}")
+        return jsonify({
+            'error': 'Failed to fetch insights',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/customer/slow-queries')
+@login_required
+@limiter.limit("30 per minute")
+def api_customer_slow_queries():
+    """
+    Get slow queries for the current customer (Premium feature).
+
+    Query params:
+        page: Page number (default: 1)
+        limit: Number of items per page (default: 20, max: 100)
+        sort: Sort field - 'time' for execution time, 'count' for occurrence (default: 'time')
+        range: Time range - '24h', '7d', '30d' (default: '7d')
+
+    Returns:
+        JSON with paginated slow queries:
+        {
+            "queries": [
+                {
+                    "id": 123,
+                    "query_text": "SELECT ... FROM ...",
+                    "query_preview": "SELECT ... FROM ... (truncated)",
+                    "avg_execution_time_ms": 2500,
+                    "occurrence_count": 15,
+                    "first_seen": "2026-02-01T10:00:00",
+                    "last_seen": "2026-02-01T14:30:00"
+                },
+                ...
+            ],
+            "pagination": {
+                "page": 1,
+                "limit": 20,
+                "total": 45,
+                "total_pages": 3
+            },
+            "filters": {
+                "sort": "time",
+                "range": "7d"
+            }
+        }
+    """
+    customer = Customer.get_by_id(current_user.id)
+
+    if not customer:
+        return jsonify({'error': 'Customer not found'}), 404
+
+    if customer.status != 'active':
+        return jsonify({
+            'error': 'Store not active',
+            'message': 'Slow query viewer is only available for active stores'
+        }), 400
+
+    # Premium plan check - require premium_plugins feature
+    plan = PricingPlan.get_by_id(customer.plan_id) if customer.plan_id else None
+    if not plan or not plan.has_feature('premium_plugins'):
+        return jsonify({
+            'error': 'Premium feature',
+            'message': 'Slow query viewer is available on Pro, Scale, and Agency plans',
+            'upgrade_required': True
+        }), 403
+
+    # Parse query parameters
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+        limit = min(100, max(1, int(request.args.get('limit', 20))))
+    except (TypeError, ValueError):
+        page = 1
+        limit = 20
+
+    sort = request.args.get('sort', 'time')
+    if sort not in ['time', 'count']:
+        sort = 'time'
+
+    time_range = request.args.get('range', '7d')
+    if time_range not in ['24h', '7d', '30d']:
+        time_range = '7d'
+
+    try:
+        from performance.slow_queries import get_slow_queries
+        result = get_slow_queries(
+            customer_id=customer.id,
+            page=page,
+            limit=limit,
+            sort_by=sort,
+            time_range=time_range
+        )
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error fetching slow queries for customer {customer.id}: {e}")
+        return jsonify({
+            'error': 'Failed to fetch slow queries',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/customer/automation-preferences', methods=['GET'])
+@login_required
+@limiter.limit("30 per minute")
+def api_get_automation_preferences():
+    """
+    Get automation preferences for the current customer.
+
+    Returns:
+        JSON with automation level and description:
+        {
+            "level": 2,
+            "name": "Safe Auto-Fix",
+            "description": "Automatically apply safe, reversible fixes...",
+            "actions": ["Cache clearing", "Log rotation", ...]
+        }
+    """
+    customer = Customer.get_by_id(current_user.id)
+
+    if not customer:
+        return jsonify({'error': 'Customer not found'}), 404
+
+    try:
+        preferences = customer.get_automation_preferences()
+        return jsonify(preferences)
+    except Exception as e:
+        logger.error(f"Error fetching automation preferences for customer {customer.id}: {e}")
+        return jsonify({
+            'error': 'Failed to fetch automation preferences',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/customer/automation-preferences', methods=['PUT'])
+@login_required
+@limiter.limit("10 per minute")
+@csrf.exempt
+def api_update_automation_preferences():
+    """
+    Update automation preferences for the current customer.
+
+    Request body:
+        {
+            "level": 1|2|3
+        }
+
+    Levels:
+        1 = Notify Only - Detect issues, send alerts, take no action
+        2 = Safe Auto-Fix - Apply reversible fixes automatically (DEFAULT)
+        3 = Full Auto - Aggressive optimization including restarts, scaling
+
+    Returns:
+        JSON with updated preferences
+    """
+    customer = Customer.get_by_id(current_user.id)
+
+    if not customer:
+        return jsonify({'error': 'Customer not found'}), 404
+
+    try:
+        data = request.get_json()
+        if not data or 'level' not in data:
+            return jsonify({'error': 'Missing required field: level'}), 400
+
+        level = data['level']
+
+        # Validate level
+        if not isinstance(level, int) or level not in [1, 2, 3]:
+            return jsonify({
+                'error': 'Invalid automation level',
+                'message': 'Level must be 1, 2, or 3'
+            }), 400
+
+        # Update preferences
+        success = customer.update_automation_preferences(level)
+
+        if not success:
+            return jsonify({'error': 'Failed to update automation preferences'}), 500
+
+        # Return updated preferences
+        preferences = customer.get_automation_preferences()
+
+        logger.info(f"Customer {customer.id} updated automation level to {level}")
+        security_logger.info(f"Automation preferences updated: customer_id={customer.id}, level={level}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Automation preferences updated successfully',
+            'preferences': preferences
+        })
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error updating automation preferences for customer {customer.id}: {e}")
+        return jsonify({
+            'error': 'Failed to update automation preferences',
+            'message': str(e)
+        }), 500
+
+
 @app.route('/api/container/status')
 @login_required
 @limiter.limit("60 per minute")  # Allow frequent polling
