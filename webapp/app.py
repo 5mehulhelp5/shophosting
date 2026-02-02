@@ -2501,6 +2501,68 @@ def api_customer_health_score():
         }), 500
 
 
+@app.route('/api/customer/insights')
+@login_required
+@limiter.limit("30 per minute")  # Allow reasonable polling
+def api_customer_insights():
+    """
+    Get performance insights for the current customer.
+
+    Query params:
+        limit: Maximum number of insights to return (default: 10, max: 50)
+
+    Returns:
+        JSON with list of insights:
+        {
+            "insights": [
+                {
+                    "id": "issue-123",
+                    "type": "warning",
+                    "title": "Slow database queries detected",
+                    "message": "3 queries averaging >2s",
+                    "timestamp": "2026-02-01T12:00:00",
+                    "relative_time": "2 min ago",
+                    "details": {...},
+                    "issue_id": 123
+                },
+                ...
+            ],
+            "count": 5
+        }
+    """
+    customer = Customer.get_by_id(current_user.id)
+
+    if not customer:
+        return jsonify({'error': 'Customer not found'}), 404
+
+    if customer.status != 'active':
+        return jsonify({
+            'error': 'Store not active',
+            'message': 'Insights are only available for active stores'
+        }), 400
+
+    # Get limit from query params, with validation
+    try:
+        limit = int(request.args.get('limit', 10))
+        limit = max(1, min(limit, 50))  # Clamp between 1 and 50
+    except (TypeError, ValueError):
+        limit = 10
+
+    try:
+        from performance.insights import get_performance_insights
+        insights = get_performance_insights(customer.id, limit=limit)
+        return jsonify({
+            'insights': insights,
+            'count': len(insights)
+        })
+    except Exception as e:
+        logger.error(f"Error fetching insights for customer {customer.id}: {e}")
+        return jsonify({
+            'error': 'Failed to fetch insights',
+            'message': str(e)
+        }), 500
+
+
 @app.route('/api/container/status')
 @login_required
 @limiter.limit("60 per minute")  # Allow frequent polling

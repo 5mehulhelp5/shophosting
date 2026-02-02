@@ -277,6 +277,221 @@
     }
 }
 
+/* Performance Insights Widget */
+.insights-widget {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+}
+
+.insights-widget::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: var(--gradient-border);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.insights-widget:hover::before {
+    opacity: 1;
+}
+
+.insights-widget:hover {
+    box-shadow: var(--shadow-glow);
+}
+
+.insights-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.insights-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.insights-title svg {
+    color: var(--accent-purple);
+}
+
+.insights-refresh {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s ease;
+}
+
+.insights-refresh:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.insights-refresh.loading svg {
+    animation: spin 1s linear infinite;
+}
+
+.insights-feed {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.insight-card {
+    display: flex;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--bg-surface);
+    border-radius: var(--radius-md);
+    border-left: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.insight-card:hover {
+    background: var(--bg-hover);
+}
+
+.insight-card.warning {
+    border-left-color: var(--warning);
+}
+
+.insight-card.recommendation {
+    border-left-color: var(--info);
+}
+
+.insight-card.success {
+    border-left-color: var(--success);
+}
+
+.insight-icon {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.insight-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+.insight-icon.warning {
+    background: var(--warning-muted);
+    color: var(--warning);
+}
+
+.insight-icon.recommendation {
+    background: var(--info-muted);
+    color: var(--info);
+}
+
+.insight-icon.success {
+    background: var(--success-muted);
+    color: var(--success);
+}
+
+.insight-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.insight-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.insight-message {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.insight-time {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* Insights Loading & Empty States */
+.insights-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px;
+    color: var(--text-muted);
+}
+
+.insights-loading::after {
+    content: '';
+    width: 20px;
+    height: 20px;
+    margin-left: 10px;
+    border: 2px solid var(--border-subtle);
+    border-top-color: var(--accent-purple);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.insights-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px;
+    color: var(--text-muted);
+    text-align: center;
+    gap: 8px;
+}
+
+.insights-empty svg {
+    width: 28px;
+    height: 28px;
+    opacity: 0.5;
+}
+
+.insights-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px;
+    color: var(--text-muted);
+    text-align: center;
+    gap: 8px;
+}
+
+.insights-error svg {
+    width: 28px;
+    height: 28px;
+    color: var(--error);
+}
+
 /* Quick Actions */
 .quick-actions {
     display: flex;
@@ -625,6 +840,31 @@
 
     <div id="health-score-content">
         <div class="health-score-loading">Loading health score...</div>
+    </div>
+</div>
+
+<!-- Performance Insights Widget -->
+<div class="insights-widget" id="insights-widget">
+    <div class="insights-header">
+        <h2 class="insights-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            Performance Insights
+        </h2>
+        <button class="insights-refresh" id="insights-refresh" title="Refresh insights">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 4v6h-6"></path>
+                <path d="M1 20v-6h6"></path>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+        </button>
+    </div>
+
+    <div id="insights-content">
+        <div class="insights-loading">Loading insights...</div>
     </div>
 </div>
 
@@ -1070,16 +1310,234 @@
         }
     }
 
+    // =========================================================================
+    // Performance Insights Widget
+    // =========================================================================
+
+    // Icon SVG paths for insight types
+    const insightIcons = {
+        warning: {
+            viewBox: '0 0 24 24',
+            paths: [
+                {type: 'path', d: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'},
+                {type: 'line', x1: '12', y1: '9', x2: '12', y2: '13'},
+                {type: 'line', x1: '12', y1: '17', x2: '12.01', y2: '17'}
+            ]
+        },
+        recommendation: {
+            viewBox: '0 0 24 24',
+            paths: [
+                {type: 'path', d: 'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z'}
+            ]
+        },
+        success: {
+            viewBox: '0 0 24 24',
+            paths: [
+                {type: 'path', d: 'M22 11.08V12a10 10 0 1 1-5.93-9.14'},
+                {type: 'polyline', points: '22 4 12 14.01 9 11.01'}
+            ]
+        }
+    };
+
+    // Fetch and render insights
+    async function fetchInsights() {
+        const contentEl = document.getElementById('insights-content');
+        const refreshBtn = document.getElementById('insights-refresh');
+
+        refreshBtn.classList.add('loading');
+
+        try {
+            const response = await fetch('/api/customer/insights?limit=10', {
+                credentials: 'same-origin'
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to fetch insights');
+            }
+
+            const data = await response.json();
+            renderInsights(data.insights);
+        } catch (error) {
+            console.error('Failed to fetch insights:', error);
+            renderInsightsError(contentEl);
+        } finally {
+            refreshBtn.classList.remove('loading');
+        }
+    }
+
+    // Render insights feed using safe DOM methods
+    function renderInsights(insights) {
+        const contentEl = document.getElementById('insights-content');
+
+        // Clear existing content
+        while (contentEl.firstChild) {
+            contentEl.removeChild(contentEl.firstChild);
+        }
+
+        // Handle empty state
+        if (!insights || insights.length === 0) {
+            const emptyDiv = document.createElement('div');
+            emptyDiv.className = 'insights-empty';
+
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('viewBox', '0 0 24 24');
+            svg.setAttribute('fill', 'none');
+            svg.setAttribute('stroke', 'currentColor');
+            svg.setAttribute('stroke-width', '2');
+
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', 'M22 11.08V12a10 10 0 1 1-5.93-9.14');
+            svg.appendChild(path);
+
+            const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+            polyline.setAttribute('points', '22 4 12 14.01 9 11.01');
+            svg.appendChild(polyline);
+
+            emptyDiv.appendChild(svg);
+
+            const span = document.createElement('span');
+            span.textContent = 'No issues or recommendations. Your store is running smoothly!';
+            emptyDiv.appendChild(span);
+
+            contentEl.appendChild(emptyDiv);
+            return;
+        }
+
+        // Create feed container
+        const feedDiv = document.createElement('div');
+        feedDiv.className = 'insights-feed';
+
+        for (const insight of insights) {
+            const card = createInsightCard(insight);
+            feedDiv.appendChild(card);
+        }
+
+        contentEl.appendChild(feedDiv);
+    }
+
+    // Create a single insight card using safe DOM methods
+    function createInsightCard(insight) {
+        const card = document.createElement('div');
+        card.className = 'insight-card ' + insight.type;
+        card.setAttribute('data-insight-id', insight.id);
+
+        // Icon
+        const iconDiv = document.createElement('div');
+        iconDiv.className = 'insight-icon ' + insight.type;
+
+        const iconData = insightIcons[insight.type] || insightIcons.recommendation;
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', iconData.viewBox);
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '2');
+        svg.setAttribute('stroke-linecap', 'round');
+        svg.setAttribute('stroke-linejoin', 'round');
+
+        for (const pathData of iconData.paths) {
+            let element;
+            if (pathData.type === 'path') {
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                element.setAttribute('d', pathData.d);
+            } else if (pathData.type === 'line') {
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                element.setAttribute('x1', pathData.x1);
+                element.setAttribute('y1', pathData.y1);
+                element.setAttribute('x2', pathData.x2);
+                element.setAttribute('y2', pathData.y2);
+            } else if (pathData.type === 'polyline') {
+                element = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+                element.setAttribute('points', pathData.points);
+            }
+            if (element) svg.appendChild(element);
+        }
+
+        iconDiv.appendChild(svg);
+        card.appendChild(iconDiv);
+
+        // Content
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'insight-content';
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'insight-title';
+        titleEl.textContent = insight.title;
+        contentDiv.appendChild(titleEl);
+
+        const messageEl = document.createElement('div');
+        messageEl.className = 'insight-message';
+        messageEl.textContent = insight.message;
+        contentDiv.appendChild(messageEl);
+
+        card.appendChild(contentDiv);
+
+        // Time
+        const timeEl = document.createElement('div');
+        timeEl.className = 'insight-time';
+        timeEl.textContent = insight.relative_time;
+        card.appendChild(timeEl);
+
+        return card;
+    }
+
+    // Render error state for insights
+    function renderInsightsError(container) {
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'insights-error';
+
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('fill', 'none');
+        svg.setAttribute('stroke', 'currentColor');
+        svg.setAttribute('stroke-width', '2');
+
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', '12');
+        circle.setAttribute('cy', '12');
+        circle.setAttribute('r', '10');
+        svg.appendChild(circle);
+
+        const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line1.setAttribute('x1', '12');
+        line1.setAttribute('y1', '8');
+        line1.setAttribute('x2', '12');
+        line1.setAttribute('y2', '12');
+        svg.appendChild(line1);
+
+        const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line2.setAttribute('x1', '12');
+        line2.setAttribute('y1', '16');
+        line2.setAttribute('x2', '12.01');
+        line2.setAttribute('y2', '16');
+        svg.appendChild(line2);
+
+        errorDiv.appendChild(svg);
+
+        const span = document.createElement('span');
+        span.textContent = 'Unable to load insights';
+        errorDiv.appendChild(span);
+
+        container.appendChild(errorDiv);
+    }
+
     // Initialize
     document.getElementById('restart-btn').addEventListener('click', restartContainer);
     document.getElementById('health-score-refresh').addEventListener('click', fetchHealthScore);
+    document.getElementById('insights-refresh').addEventListener('click', fetchInsights);
 
     // Fetch initial data
     fetchContainerStatus();
     fetchHealthScore();
+    fetchInsights();
 
     // Refresh intervals
     setInterval(fetchContainerStatus, 10000);
     setInterval(fetchHealthScore, 60000);  // Refresh health score every minute
+    setInterval(fetchInsights, 60000);  // Refresh insights every minute
 </script>
 {% endblock %}
