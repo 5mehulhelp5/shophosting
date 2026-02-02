@@ -83,3 +83,4 @@ docs/plans/*-marketing-*.md
 
 # Generated reports
 webapp/admin/marketing/reports/*.pdf
+sudoers.d/
