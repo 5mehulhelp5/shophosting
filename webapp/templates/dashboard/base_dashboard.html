@@ -4,48 +4,137 @@
 
 {% block extra_css %}
 <style>
-    /* Dashboard Layout */
+    /* ================================================
+       DASHBOARD LAYOUT - HAMBURGER MENU APPROACH
+       Sidebar always hidden, toggled via menu button
+       ================================================ */
     .dashboard-layout {
-        display: flex;
         min-height: calc(100vh - 73px);
         position: relative;
         z-index: 1;
     }
 
-    /* Sidebar */
+    /* Dashboard Header Bar - Contains hamburger and page title */
+    .dashboard-header-bar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 16px 24px;
+        background: var(--bg-elevated);
+        border-bottom: 1px solid var(--border-subtle);
+        position: sticky;
+        top: 73px;
+        z-index: 30;
+    }
+
+    /* Hamburger Menu Button */
+    .menu-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md);
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        flex-shrink: 0;
+    }
+
+    .menu-toggle:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+        border-color: var(--border-default);
+    }
+
+    .menu-toggle svg {
+        width: 22px;
+        height: 22px;
+    }
+
+    .dashboard-header-bar .current-page {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        letter-spacing: -0.01em;
+    }
+
+    /* Sidebar - Slide-out drawer */
     .dashboard-sidebar {
-        width: 260px;
+        width: 280px;
+        max-width: 85vw;
         background: var(--bg-elevated);
         border-right: 1px solid var(--border-subtle);
         position: fixed;
-        top: 73px;
+        top: 0;
         left: 0;
         bottom: 0;
         display: flex;
         flex-direction: column;
-        z-index: 50;
-        transition: transform 0.3s ease;
+        z-index: 200;
+        transform: translateX(-100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0);
+    }
+
+    .dashboard-sidebar.open {
+        transform: translateX(0);
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
     }
 
     .sidebar-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         padding: 20px 16px;
         border-bottom: 1px solid var(--border-subtle);
+        flex-shrink: 0;
     }
 
     .sidebar-brand {
-        font-size: 0.75rem;
-        font-weight: 600;
+        font-size: 0.8rem;
+        font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.1em;
         color: var(--text-muted);
-        padding-left: 12px;
+    }
+
+    /* Close button in sidebar */
+    .sidebar-close {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        background: transparent;
+        border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-sm);
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .sidebar-close:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+        border-color: var(--border-default);
+    }
+
+    .sidebar-close svg {
+        width: 18px;
+        height: 18px;
     }
 
     .sidebar-nav {
         display: flex;
         flex-direction: column;
         padding: 16px 12px;
+        padding-bottom: 32px;
         overflow-y: auto;
+        flex: 1;
+        -webkit-overflow-scrolling: touch;
     }
 
     .nav-section-title {
@@ -59,19 +148,24 @@
         margin-bottom: 4px;
     }
 
+    .nav-section-title:first-child {
+        margin-top: 0;
+    }
+
     .nav-item {
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 12px 16px;
+        padding: 14px 16px;
         color: var(--text-secondary);
         text-decoration: none;
         border-radius: var(--radius-md);
-        font-size: 0.9rem;
+        font-size: 0.95rem;
         font-weight: 500;
         transition: all 0.2s ease;
         position: relative;
         margin-bottom: 2px;
+        flex-shrink: 0;
     }
 
     .nav-item:hover {
@@ -97,8 +191,8 @@
     }
 
     .nav-item svg {
-        width: 20px;
-        height: 20px;
+        width: 22px;
+        height: 22px;
         opacity: 0.7;
         flex-shrink: 0;
     }
@@ -108,20 +202,36 @@
         opacity: 1;
     }
 
-    /* Main Content */
+    /* Overlay */
+    .sidebar-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 150;
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    .sidebar-overlay.open {
+        display: block;
+        opacity: 1;
+    }
+
+    /* Main Content - Full width */
     .dashboard-main {
-        flex: 1;
-        margin-left: 260px;
-        padding: 32px 40px;
-        max-width: calc(100% - 260px);
+        padding: 24px;
+        min-width: 0;
     }
 
     .page-header {
-        margin-bottom: 32px;
+        margin-bottom: 24px;
     }
 
     .page-title {
-        font-size: 1.75rem;
+        font-size: 1.5rem;
         font-weight: 700;
         color: var(--text-primary);
         letter-spacing: -0.02em;
@@ -130,170 +240,97 @@
     .page-subtitle {
         color: var(--text-tertiary);
         margin-top: 4px;
-        font-size: 0.95rem;
-    }
-
-    /* Mobile Sidebar Toggle */
-    .sidebar-toggle {
-        display: none;
-        position: fixed;
-        bottom: 24px;
-        right: 24px;
-        width: 56px;
-        height: 56px;
-        border-radius: 50%;
-        background: var(--gradient-primary);
-        border: none;
-        color: white;
-        cursor: pointer;
-        z-index: 100;
-        box-shadow: var(--shadow-lg);
-        align-items: center;
-        justify-content: center;
-        transition: bottom 0.3s ease, transform 0.2s ease;
-    }
-
-    .sidebar-toggle:active {
-        transform: scale(0.95);
-    }
-
-    .sidebar-overlay {
-        display: none;
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.6);
-        z-index: 40;
-        backdrop-filter: blur(2px);
-        -webkit-backdrop-filter: blur(2px);
-    }
-
-    /* Sidebar scroll padding to prevent footer overlap */
-    .sidebar-nav {
-        padding-bottom: 80px; /* Space for toggle button clearance */
+        font-size: 0.9rem;
     }
 
     /* ================================================
-       TABLET LANDSCAPE (1024px and below)
-       Sidebar becomes collapsible but starts visible
+       RESPONSIVE ADJUSTMENTS
        ================================================ */
-    @media (max-width: 1024px) {
-        .dashboard-sidebar {
-            width: 220px;
-        }
 
+    /* Larger screens - more padding */
+    @media (min-width: 768px) {
         .dashboard-main {
-            margin-left: 220px;
-            max-width: calc(100% - 220px);
-            padding: 24px 24px;
-        }
-    }
-
-    /* ================================================
-       TABLET PORTRAIT & LARGE PHONES (768px - 1024px)
-       Sidebar hidden by default, toggle visible
-       ================================================ */
-    @media (max-width: 900px) {
-        .dashboard-sidebar {
-            transform: translateX(-100%);
-            width: 280px;
-            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+            padding: 32px 40px;
         }
 
-        .dashboard-sidebar.open {
-            transform: translateX(0);
-        }
-
-        .dashboard-main {
-            margin-left: 0;
-            max-width: 100%;
-            padding: 24px 20px;
-        }
-
-        .sidebar-toggle {
-            display: flex;
-        }
-
-        .sidebar-overlay.open {
-            display: block;
-        }
-    }
-
-    /* ================================================
-       MOBILE PHONES (768px and below)
-       Compact mobile layout
-       ================================================ */
-    @media (max-width: 768px) {
-        .dashboard-sidebar {
-            width: 260px;
-        }
-
-        .dashboard-main {
-            padding: 20px 16px;
+        .dashboard-header-bar {
+            padding: 16px 40px;
         }
 
         .page-title {
-            font-size: 1.5rem;
-        }
-
-        .page-subtitle {
-            font-size: 0.875rem;
+            font-size: 1.75rem;
         }
     }
 
-    /* ================================================
-       SMALL PHONES (480px and below)
-       ================================================ */
+    /* Large screens - even more padding */
+    @media (min-width: 1200px) {
+        .dashboard-main {
+            padding: 40px 60px;
+        }
+
+        .dashboard-header-bar {
+            padding: 16px 60px;
+        }
+    }
+
+    /* Small screens */
     @media (max-width: 480px) {
+        .dashboard-header-bar {
+            padding: 12px 16px;
+            gap: 12px;
+        }
+
+        .menu-toggle {
+            width: 40px;
+            height: 40px;
+        }
+
+        .menu-toggle svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .dashboard-header-bar .current-page {
+            font-size: 1rem;
+        }
+
+        .dashboard-main {
+            padding: 16px;
+        }
+
+        .page-title {
+            font-size: 1.25rem;
+        }
+
+        .page-subtitle {
+            font-size: 0.85rem;
+        }
+
         .dashboard-sidebar {
             width: 100%;
             max-width: 300px;
         }
 
-        .dashboard-main {
-            padding: 16px 12px;
-        }
-
-        .sidebar-toggle {
-            width: 48px;
-            height: 48px;
-            bottom: 16px;
-            right: 16px;
-        }
-
-        .sidebar-toggle svg {
-            width: 20px;
-            height: 20px;
+        .nav-item {
+            padding: 12px 14px;
+            font-size: 0.9rem;
         }
     }
 
-    /* ================================================
-       LANDSCAPE ORIENTATION FIXES
-       Prevent footer from overlapping sidebar content
-       ================================================ */
-    @media (max-height: 500px) and (orientation: landscape) {
-        .dashboard-sidebar {
-            /* Account for shorter viewport in landscape */
-            padding-bottom: 0;
+    /* Landscape adjustments */
+    @media (orientation: landscape) and (max-height: 500px) {
+        .dashboard-header-bar {
+            padding: 10px 24px;
+            top: 60px;
+        }
+
+        .menu-toggle {
+            width: 38px;
+            height: 38px;
         }
 
         .sidebar-nav {
-            /* Reduce bottom padding in landscape to maximize space */
-            padding-bottom: 60px;
-            /* Enable momentum scrolling on touch devices */
-            -webkit-overflow-scrolling: touch;
-        }
-
-        .sidebar-toggle {
-            /* Move toggle button higher in landscape to avoid footer */
-            bottom: 12px;
-            right: 12px;
-            width: 44px;
-            height: 44px;
-        }
-
-        .sidebar-toggle svg {
-            width: 18px;
-            height: 18px;
+            padding: 10px 10px 20px 10px;
         }
 
         .nav-item {
@@ -304,80 +341,11 @@
         .nav-section-title {
             padding: 6px 14px;
             margin-top: 10px;
-        }
-    }
-
-    /* ================================================
-       TABLET LANDSCAPE SPECIFIC (height-constrained)
-       ================================================ */
-    @media (min-width: 768px) and (max-width: 1024px) and (orientation: landscape) {
-        .dashboard-sidebar {
-            width: 200px;
-        }
-
-        .dashboard-main {
-            margin-left: 200px;
-            max-width: calc(100% - 200px);
-        }
-
-        .sidebar-nav {
-            padding: 12px 8px 70px 8px;
-        }
-
-        .nav-item {
-            padding: 10px 12px;
-            gap: 10px;
-            font-size: 0.85rem;
-        }
-
-        .nav-item svg {
-            width: 18px;
-            height: 18px;
+            font-size: 0.65rem;
         }
 
         .sidebar-header {
-            padding: 14px 12px;
-        }
-    }
-
-    /* ================================================
-       PHONE LANDSCAPE (small height, wide width)
-       Sidebar overlay mode with compact items
-       ================================================ */
-    @media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
-        .dashboard-sidebar {
-            transform: translateX(-100%);
-            width: 240px;
-            top: 60px; /* Slightly smaller header offset */
-        }
-
-        .dashboard-sidebar.open {
-            transform: translateX(0);
-        }
-
-        .sidebar-nav {
-            padding: 8px;
-            padding-bottom: 50px;
-        }
-
-        .nav-item {
-            padding: 8px 12px;
-            font-size: 0.8rem;
-            margin-bottom: 1px;
-        }
-
-        .nav-section-title {
-            font-size: 0.65rem;
-            padding: 4px 12px;
-            margin-top: 8px;
-            margin-bottom: 2px;
-        }
-
-        .sidebar-toggle {
-            bottom: 8px;
-            right: 8px;
-            width: 40px;
-            height: 40px;
+            padding: 14px 16px;
         }
     }
 
@@ -386,15 +354,20 @@
 {% endblock %}
 
 {% block content %}
-<!-- Mobile Overlay -->
+<!-- Overlay -->
 <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
-<div class="dashboard-layout">
-    <!-- Sidebar -->
-    <aside class="dashboard-sidebar" id="dashboard-sidebar">
-        <div class="sidebar-header">
-            <span class="sidebar-brand">Dashboard</span>
-        </div>
+<!-- Slide-out Sidebar -->
+<aside class="dashboard-sidebar" id="dashboard-sidebar">
+    <div class="sidebar-header">
+        <span class="sidebar-brand">Dashboard</span>
+        <button class="sidebar-close" id="sidebar-close" aria-label="Close menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+        </button>
+    </div>
 
         <nav class="sidebar-nav">
             <a href="{{ url_for('dashboard_overview') }}" class="nav-item {% if active_page == 'overview' %}active{% endif %}">
@@ -468,81 +441,83 @@
                 Support
             </a>
         </nav>
-    </aside>
+</aside>
+
+<div class="dashboard-layout">
+    <!-- Dashboard Header Bar with Hamburger Menu -->
+    <div class="dashboard-header-bar">
+        <button class="menu-toggle" id="menu-toggle" aria-label="Open menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+        </button>
+        <span class="current-page">{% block header_title %}{{ self.page_title() }}{% endblock %}</span>
+    </div>
 
     <!-- Main Content -->
     <main class="dashboard-main">
         {% block dashboard_content %}{% endblock %}
     </main>
 </div>
-
-<!-- Mobile Toggle Button -->
-<button class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="3" y1="12" x2="21" y2="12"></line>
-        <line x1="3" y1="6" x2="21" y2="6"></line>
-        <line x1="3" y1="18" x2="21" y2="18"></line>
-    </svg>
-</button>
 {% endblock %}
 
 {% block extra_js %}
 <script nonce="{{ csp_nonce() }}">
-    // Add dashboard class to body for footer styling (fallback for browsers without :has() support)
-    document.body.classList.add('has-dashboard-sidebar');
-
-    // Mobile sidebar toggle
+    // Sidebar elements
     const sidebar = document.getElementById('dashboard-sidebar');
     const overlay = document.getElementById('sidebar-overlay');
-    const toggle = document.getElementById('sidebar-toggle');
+    const menuToggle = document.getElementById('menu-toggle');
+    const sidebarClose = document.getElementById('sidebar-close');
 
-    if (toggle) {
-        toggle.addEventListener('click', () => {
-            sidebar.classList.toggle('open');
-            overlay.classList.toggle('open');
-            // Prevent body scroll when sidebar is open
-            document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : '';
-        });
+    // Open sidebar
+    function openSidebar() {
+        sidebar.classList.add('open');
+        overlay.classList.add('open');
+        document.body.style.overflow = 'hidden';
     }
 
+    // Close sidebar
+    function closeSidebar() {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    // Menu toggle button (hamburger)
+    if (menuToggle) {
+        menuToggle.addEventListener('click', openSidebar);
+    }
+
+    // Close button in sidebar
+    if (sidebarClose) {
+        sidebarClose.addEventListener('click', closeSidebar);
+    }
+
+    // Overlay click closes sidebar
     if (overlay) {
-        overlay.addEventListener('click', () => {
-            sidebar.classList.remove('open');
-            overlay.classList.remove('open');
-            document.body.style.overflow = '';
-        });
+        overlay.addEventListener('click', closeSidebar);
     }
 
     // Close sidebar on escape key
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && sidebar && sidebar.classList.contains('open')) {
-            sidebar.classList.remove('open');
-            overlay.classList.remove('open');
-            document.body.style.overflow = '';
+            closeSidebar();
         }
     });
 
-    // Handle orientation change - close sidebar and reset
-    window.addEventListener('orientationchange', () => {
-        setTimeout(() => {
-            if (sidebar) sidebar.classList.remove('open');
-            if (overlay) overlay.classList.remove('open');
-            document.body.style.overflow = '';
-        }, 100);
+    // Close sidebar when clicking a nav item (for better UX on mobile)
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', () => {
+            // Small delay to allow navigation to start
+            setTimeout(closeSidebar, 150);
+        });
     });
 
-    // Handle resize - show/hide sidebar appropriately
-    let resizeTimer;
-    window.addEventListener('resize', () => {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-            if (window.innerWidth > 900) {
-                // Desktop: ensure sidebar is visible and overlay hidden
-                if (sidebar) sidebar.classList.remove('open');
-                if (overlay) overlay.classList.remove('open');
-                document.body.style.overflow = '';
-            }
-        }, 150);
+    // Handle orientation change - close sidebar
+    window.addEventListener('orientationchange', () => {
+        setTimeout(closeSidebar, 100);
     });
 </script>
 {% block dashboard_js_block %}

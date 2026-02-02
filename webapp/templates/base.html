@@ -624,41 +624,11 @@
                 transparent 100%);
         }
 
-        /* Footer adjustments for landscape mobile - prevent overlap with fixed elements */
+        /* Footer adjustments for landscape mobile */
         @media (max-height: 500px) and (orientation: landscape) {
             footer {
                 padding: 20px 0;
                 font-size: 0.8rem;
-            }
-        }
-
-        /* Dashboard layout: footer needs extra padding for toggle button clearance */
-        @media (max-width: 900px) {
-            /* Class-based approach for broader browser support */
-            body.has-dashboard-sidebar footer {
-                padding-bottom: 90px;
-            }
-
-            /* Modern browsers with :has() support */
-            body:has(.dashboard-layout) footer {
-                padding-bottom: 90px;
-            }
-        }
-
-        @media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
-            body.has-dashboard-sidebar footer {
-                padding-bottom: 70px;
-            }
-
-            body:has(.dashboard-layout) footer {
-                padding-bottom: 70px;
-            }
-        }
-
-        @media (max-width: 480px) {
-            body.has-dashboard-sidebar footer,
-            body:has(.dashboard-layout) footer {
-                padding-bottom: 80px;
             }
         }
 
