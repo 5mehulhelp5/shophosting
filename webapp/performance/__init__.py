@@ -24,6 +24,26 @@ from .playbooks import (
 )
 from .action_logger import ActionLogger
 from .notifications import NotificationService
+from .benchmarks import (
+    get_customer_benchmarks,
+    get_cohort_summary,
+    CohortBenchmarker,
+    BenchmarkResult,
+)
+from .hotspots import (
+    get_hotspots,
+    get_cpu_hotspots,
+    get_memory_hotspots,
+    get_disk_hotspots,
+    HotspotDetector,
+)
+from .admin_playbooks import (
+    execute_admin_playbook,
+    get_available_playbooks,
+    get_intervention_history,
+    AdminPlaybookExecutor,
+    PlaybookType,
+)
 
 __all__ = [
     # Health score
@@ -51,4 +71,21 @@ __all__ = [
     'ActionLogger',
     # Notifications
     'NotificationService',
+    # Benchmarks
+    'get_customer_benchmarks',
+    'get_cohort_summary',
+    'CohortBenchmarker',
+    'BenchmarkResult',
+    # Hotspots
+    'get_hotspots',
+    'get_cpu_hotspots',
+    'get_memory_hotspots',
+    'get_disk_hotspots',
+    'HotspotDetector',
+    # Admin Playbooks
+    'execute_admin_playbook',
+    'get_available_playbooks',
+    'get_intervention_history',
+    'AdminPlaybookExecutor',
+    'PlaybookType',
 ]

@@ -3600,6 +3600,28 @@ def api_monitoring_status():
 
 
 # =============================================================================
+# Fleet Health Dashboard
+# =============================================================================
+
+@admin_bp.route('/fleet-health')
+@admin_required
+def fleet_health():
+    """
+    Fleet health dashboard - overview of all customer health metrics.
+
+    This page displays:
+    - Overview cards with totals and issues counts
+    - Health distribution bar (healthy/warning/critical)
+    - Resource hotspots (collapsible)
+    - Sortable, filterable customer table with health scores
+
+    Data is fetched via AJAX from the /admin/api/fleet/* endpoints.
+    """
+    admin = get_current_admin()
+    return render_template('admin/fleet_health.html', admin=admin)
+
+
+# =============================================================================
 # Status Page Management
 # =============================================================================
 
