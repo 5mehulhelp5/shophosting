@@ -152,6 +152,10 @@ class StagingWorker:
             # Update URLs in staging database
             self.update_staging_urls(staging, customer)
 
+            # Update Magento env.php with staging database credentials
+            if customer.platform == 'magento':
+                self.update_magento_env(staging, customer)
+
             # Configure nginx for staging
             self.configure_staging_nginx(staging)
 
@@ -209,12 +213,27 @@ class StagingWorker:
 
         if src.exists():
             logger.info(f"Cloning files from {src} to {dst}")
+            # Exclude temporary/session directories that don't need to be in staging
+            # and may have permission issues
+            rsync_cmd = [
+                'rsync', '-a', '--delete',
+                '--exclude', 'var/session/*',      # Magento sessions
+                '--exclude', 'var/cache/*',        # Magento cache
+                '--exclude', 'var/page_cache/*',   # Magento page cache
+                '--exclude', 'var/tmp/*',          # Magento temp files
+                '--exclude', 'wp-content/cache/*', # WooCommerce cache
+                f"{src}/", f"{dst}/"
+            ]
             result = subprocess.run(
-                ['rsync', '-a', '--delete', f"{src}/", f"{dst}/"],
+                rsync_cmd,
                 capture_output=True, text=True, timeout=600
             )
-            if result.returncode != 0:
+            # Exit code 23 means partial transfer (some files couldn't be read)
+            # which is acceptable for temporary/session files
+            if result.returncode not in [0, 23]:
                 raise StagingError(f"File clone failed: {result.stderr}")
+            if result.returncode == 23:
+                logger.warning(f"Some files could not be copied (permission issues): {result.stderr[-500:]}")
             logger.info("Files cloned successfully")
         else:
             logger.warning(f"Production files not found at {src}")
@@ -286,15 +305,35 @@ class StagingWorker:
             raise StagingError("Staging database not ready")
 
         # Dump production database
+        # Use flags to avoid privilege issues when importing to staging:
+        # --set-gtid-purged=OFF: Avoid GTID-related statements that need SUPER
+        # --no-tablespaces: Avoid tablespace statements that need privileges
+        # --skip-definer: Remove DEFINER clauses from views/procedures/triggers
         dump_result = subprocess.run(
             ['docker', 'exec', prod_container, 'mysqldump',
              '-u', customer.db_user, f'-p{customer.db_password}',
-             '--single-transaction', '--quick', customer.db_name],
+             '--single-transaction', '--quick',
+             '--set-gtid-purged=OFF', '--no-tablespaces',
+             customer.db_name],
             capture_output=True, text=True, timeout=300
         )
 
         if dump_result.returncode != 0:
             raise StagingError(f"Database dump failed: {dump_result.stderr}")
+
+        # Remove DEFINER clauses that require SUPER privilege
+        # This regex removes DEFINER=`user`@`host` from CREATE statements
+        import re
+        db_dump = re.sub(
+            r'/\*!50013 DEFINER=`[^`]*`@`[^`]*` SQL SECURITY DEFINER \*/',
+            '',
+            dump_result.stdout
+        )
+        db_dump = re.sub(
+            r'DEFINER=`[^`]*`@`[^`]*`\s*',
+            '',
+            db_dump
+        )
 
         # Import to staging database
         import_process = subprocess.Popen(
@@ -305,7 +344,7 @@ class StagingWorker:
             stderr=subprocess.PIPE,
             text=True
         )
-        stdout, stderr = import_process.communicate(input=dump_result.stdout, timeout=300)
+        stdout, stderr = import_process.communicate(input=db_dump, timeout=300)
 
         if import_process.returncode != 0:
             raise StagingError(f"Database import failed: {stderr}")
@@ -348,6 +387,59 @@ class StagingWorker:
             logger.warning(f"URL update may have partially failed: {result.stderr}")
         else:
             logger.info("URLs updated successfully")
+
+    def update_magento_env(self, staging, customer):
+        """Update Magento env.php with staging database credentials"""
+        logger.info(f"Updating Magento env.php for staging {staging.id}")
+
+        staging_number = staging.staging_domain.split('-')[-1].split('.')[0]
+        web_container = f"customer-{customer.id}-staging-{staging_number}-web"
+
+        # Read current env.php
+        result = subprocess.run(
+            ['docker', 'exec', web_container, 'cat', '/var/www/html/app/etc/env.php'],
+            capture_output=True, text=True
+        )
+
+        if result.returncode != 0:
+            logger.warning(f"Could not read env.php: {result.stderr}")
+            return
+
+        env_content = result.stdout
+
+        # Update database credentials using sed
+        # Escape special characters in password for sed
+        escaped_password = staging.db_password.replace('$', '\\$').replace('&', '\\&')
+
+        # Update dbname, username, password
+        subprocess.run(
+            ['docker', 'exec', web_container, 'sed', '-i',
+             f"s/'dbname' => '[^']*'/'dbname' => '{staging.db_name}'/",
+             '/var/www/html/app/etc/env.php'],
+            capture_output=True
+        )
+        subprocess.run(
+            ['docker', 'exec', web_container, 'sed', '-i',
+             f"s/'username' => '[^']*'/'username' => '{staging.db_user}'/",
+             '/var/www/html/app/etc/env.php'],
+            capture_output=True
+        )
+        subprocess.run(
+            ['docker', 'exec', web_container, 'sed', '-i',
+             f"s/'password' => '[^']*'/'password' => '{escaped_password}'/",
+             '/var/www/html/app/etc/env.php'],
+            capture_output=True
+        )
+
+        # Clear Magento cache
+        subprocess.run(
+            ['docker', 'exec', web_container, 'rm', '-rf',
+             '/var/www/html/var/cache', '/var/www/html/generated',
+             '/var/www/html/var/page_cache'],
+            capture_output=True
+        )
+
+        logger.info("Magento env.php updated with staging credentials")
 
     def configure_staging_nginx(self, staging):
         """Configure Nginx reverse proxy for staging domain"""
