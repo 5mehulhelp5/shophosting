@@ -432,6 +432,19 @@ app.register_blueprint(cloudflare_bp)
 from leads import leads_bp
 app.register_blueprint(leads_bp, url_prefix='')
 
+# Register terminal blueprint for WP-CLI access (customer dashboard)
+from terminal import terminal_bp
+app.register_blueprint(terminal_bp)
+
+# Apply rate limiting to terminal endpoints (prevent abuse)
+limiter.limit("60 per minute")(app.view_functions['terminal.execute_command'])
+limiter.limit("10 per minute")(app.view_functions['terminal.create_session'])
+
+# Exempt terminal API endpoints from CSRF (JSON API)
+csrf.exempt(app.view_functions['terminal.create_session'])
+csrf.exempt(app.view_functions['terminal.execute_command'])
+csrf.exempt(app.view_functions['terminal.delete_session'])
+
 # Exempt metrics endpoints from rate limiting (Prometheus scrapes frequently)
 limiter.exempt(app.view_functions['metrics.prometheus_metrics'])
 limiter.exempt(app.view_functions['metrics.health_check'])
