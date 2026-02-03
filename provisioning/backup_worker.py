@@ -179,6 +179,25 @@ class BackupWorker:
         return 'daily'
 
 
+def _on_job_failure(job, connection, type, value, traceback):
+    """
+    RQ failure callback - ensures MySQL job status is updated when RQ job fails.
+    This catches exceptions that happen before job.update_status() is called,
+    such as model loading errors or database connection issues.
+    """
+    try:
+        # Extract job_id from the RQ job args
+        if job.args:
+            job_id = job.args[0]
+            backup_job = CustomerBackupJob.get_by_id(job_id)
+            if backup_job and backup_job.status in ('pending', 'running'):
+                error_msg = f"Worker error: {type.__name__}: {str(value)[:200]}"
+                backup_job.update_status('failed', error_msg)
+                logger.error(f"Marked backup job {job_id} as failed via RQ callback: {error_msg}")
+    except Exception as e:
+        logger.error(f"Failed to update job status in RQ failure callback: {e}")
+
+
 # =============================================================================
 # RQ Job Functions
 # =============================================================================
@@ -189,10 +208,18 @@ def create_backup_job(job_id):
     return worker.create_backup(job_id)
 
 
+# Register failure callback for this function
+create_backup_job.on_failure = _on_job_failure
+
+
 def restore_backup_job(job_id):
     """RQ job wrapper for restoring backup"""
     worker = BackupWorker()
     return worker.restore_backup(job_id)
+
+
+# Register failure callback for this function
+restore_backup_job.on_failure = _on_job_failure
 
 
 if __name__ == '__main__':
