@@ -179,6 +179,25 @@ class BackupWorker:
         return 'daily'
 
 
+def _on_job_failure(job, connection, type, value, traceback):
+    """
+    RQ failure callback - ensures MySQL job status is updated when RQ job fails.
+    This catches exceptions that happen before job.update_status() is called,
+    such as model loading errors or database connection issues.
+    """
+    try:
+        # Extract job_id from the RQ job args
+        if job.args:
+            job_id = job.args[0]
+            backup_job = CustomerBackupJob.get_by_id(job_id)
+            if backup_job and backup_job.status in ('pending', 'running'):
+                error_msg = f"Worker error: {type.__name__}: {str(value)[:200]}"
+                backup_job.update_status('failed', error_msg)
+                logger.error(f"Marked backup job {job_id} as failed via RQ callback: {error_msg}")
+    except Exception as e:
+        logger.error(f"Failed to update job status in RQ failure callback: {e}")
+
+
 # =============================================================================
 # RQ Job Functions
 # =============================================================================
@@ -189,16 +208,26 @@ def create_backup_job(job_id):
     return worker.create_backup(job_id)
 
 
+# Register failure callback for this function
+create_backup_job.on_failure = _on_job_failure
+
+
 def restore_backup_job(job_id):
     """RQ job wrapper for restoring backup"""
     worker = BackupWorker()
     return worker.restore_backup(job_id)
 
 
+# Register failure callback for this function
+restore_backup_job.on_failure = _on_job_failure
+
+
 if __name__ == '__main__':
-    # Run as RQ worker
+    # Run as RQ worker with periodic cleanup
     from redis import Redis
     from rq import Worker, Queue
+    import threading
+    import time
 
     # Enable file logging when running as worker
     _configure_file_logging()
@@ -207,6 +236,25 @@ if __name__ == '__main__':
     redis_conn = Redis(host=redis_host, port=6379)
 
     queues = [Queue('backups', connection=redis_conn)]
+
+    # Stale job cleanup interval (1 hour)
+    CLEANUP_INTERVAL_SECONDS = 3600
+
+    def cleanup_loop():
+        """Periodically clean up stale backup jobs"""
+        while True:
+            try:
+                time.sleep(CLEANUP_INTERVAL_SECONDS)
+                count = CustomerBackupJob.cleanup_stale_jobs(max_age_hours=1)
+                if count > 0:
+                    logger.info(f"Cleaned up {count} stale backup jobs")
+            except Exception as e:
+                logger.error(f"Error in cleanup loop: {e}")
+
+    # Start cleanup thread
+    cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
+    cleanup_thread.start()
+    logger.info("Started stale job cleanup thread (interval: 1 hour)")
 
     logger.info("Starting backup worker...")
     worker = Worker(queues, connection=redis_conn)

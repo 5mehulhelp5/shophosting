@@ -51,9 +51,18 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$BACKUP_LOG"
 }
 
+# Notification script
+NOTIFY_SCRIPT="/opt/shophosting/scripts/notify-telegram.sh"
+
 # Error handler
 error_exit() {
     log "ERROR: $1"
+    # Send failure notification
+    if [ -x "$NOTIFY_SCRIPT" ]; then
+        "$NOTIFY_SCRIPT" "❌ <b>Platform Backup FAILED</b>
+⚠️ $1
+⏱ $(date '+%Y-%m-%d %H:%M')"
+    fi
     exit 1
 }
 
@@ -152,5 +161,12 @@ log "=========================================="
 log "Backup completed successfully"
 log "Total snapshots in repository: $SNAPSHOT_COUNT"
 log "=========================================="
+
+# Send success notification
+if [ -x "$NOTIFY_SCRIPT" ]; then
+    "$NOTIFY_SCRIPT" "✅ <b>Platform Backup Complete</b>
+📦 Snapshots: $SNAPSHOT_COUNT
+⏱ $(date '+%Y-%m-%d %H:%M')"
+fi
 
 exit 0
