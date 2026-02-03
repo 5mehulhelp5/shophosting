@@ -87,3 +87,4 @@ sudoers.d/
 
 # OpsBot - Personal ops tool (separate product)
 opsbot/
+docs/plans/*-opsbot-*.md
