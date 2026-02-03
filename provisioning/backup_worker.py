@@ -223,9 +223,11 @@ restore_backup_job.on_failure = _on_job_failure
 
 
 if __name__ == '__main__':
-    # Run as RQ worker
+    # Run as RQ worker with periodic cleanup
     from redis import Redis
     from rq import Worker, Queue
+    import threading
+    import time
 
     # Enable file logging when running as worker
     _configure_file_logging()
@@ -234,6 +236,25 @@ if __name__ == '__main__':
     redis_conn = Redis(host=redis_host, port=6379)
 
     queues = [Queue('backups', connection=redis_conn)]
+
+    # Stale job cleanup interval (1 hour)
+    CLEANUP_INTERVAL_SECONDS = 3600
+
+    def cleanup_loop():
+        """Periodically clean up stale backup jobs"""
+        while True:
+            try:
+                time.sleep(CLEANUP_INTERVAL_SECONDS)
+                count = CustomerBackupJob.cleanup_stale_jobs(max_age_hours=1)
+                if count > 0:
+                    logger.info(f"Cleaned up {count} stale backup jobs")
+            except Exception as e:
+                logger.error(f"Error in cleanup loop: {e}")
+
+    # Start cleanup thread
+    cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
+    cleanup_thread.start()
+    logger.info("Started stale job cleanup thread (interval: 1 hour)")
 
     logger.info("Starting backup worker...")
     worker = Worker(queues, connection=redis_conn)

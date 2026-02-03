@@ -2300,6 +2300,33 @@ class CustomerBackupJob:
             cursor.close()
             conn.close()
 
+    @staticmethod
+    def cleanup_stale_jobs(max_age_hours=1):
+        """
+        Mark stale pending/running jobs as failed.
+        Jobs stuck in pending/running for more than max_age_hours are marked failed.
+        Returns count of jobs cleaned up.
+        """
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                UPDATE customer_backup_jobs
+                SET status = 'failed',
+                    error_message = 'Job timed out (no response from worker)',
+                    completed_at = NOW()
+                WHERE status IN ('pending', 'running')
+                AND created_at < DATE_SUB(NOW(), INTERVAL %s HOUR)
+            """, (max_age_hours,))
+
+            count = cursor.rowcount
+            conn.commit()
+            return count
+        finally:
+            cursor.close()
+            conn.close()
+
     def to_dict(self):
         """Convert to dictionary"""
         return {
