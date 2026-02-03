@@ -1,6 +1,11 @@
 """
 Gunicorn configuration file for ShopHosting.io
 All settings can be overridden via environment variables
+
+Performance optimizations:
+- Uses gevent async workers for better concurrency
+- Each worker can handle multiple concurrent requests
+- Increased worker count for high-traffic scenarios
 """
 
 import os
@@ -10,16 +15,23 @@ import multiprocessing
 bind = os.getenv('GUNICORN_BIND', '127.0.0.1:5000')
 
 # Worker Processes
-# Default: 2 * CPU cores + 1 (recommended for I/O bound applications)
-# Can be overridden with GUNICORN_WORKERS env var
-default_workers = (multiprocessing.cpu_count() * 2) + 1
+# For gevent: fewer workers needed since each handles many connections
+# Rule of thumb: 2-4 workers per core for I/O bound apps with gevent
+cpu_count = multiprocessing.cpu_count()
+default_workers = max(4, cpu_count * 2)  # Minimum 4, scale with cores
 workers = int(os.getenv('GUNICORN_WORKERS', default_workers))
 
-# Worker class - sync is default, can use gevent/eventlet for async
-worker_class = os.getenv('GUNICORN_WORKER_CLASS', 'sync')
+# Worker class - use gthread for thread-based concurrency (safer than gevent)
+# Each worker spawns multiple threads to handle concurrent requests
+worker_class = os.getenv('GUNICORN_WORKER_CLASS', 'gthread')
 
-# Threads per worker (only relevant for gthread worker class)
-threads = int(os.getenv('GUNICORN_THREADS', '1'))
+# Connections per worker (only for gevent/eventlet)
+# Higher values allow more concurrent connections per worker
+worker_connections = int(os.getenv('GUNICORN_WORKER_CONNECTIONS', '1000'))
+
+# Threads per worker (for gthread worker class)
+# More threads = more concurrent requests per worker
+threads = int(os.getenv('GUNICORN_THREADS', '4'))
 
 # Timeout for worker processes (seconds)
 timeout = int(os.getenv('GUNICORN_TIMEOUT', '30'))
@@ -50,6 +62,17 @@ access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s"
 
 # Security: Don't expose server header
 proc_name = 'shophosting-webapp'
+
+
+def post_fork(server, worker):
+    """Called just after a worker has been forked.
+
+    Gevent requires monkey patching to make standard library functions
+    cooperative (non-blocking). This must happen early, before other imports.
+    """
+    if worker_class == 'gevent':
+        from gevent import monkey
+        monkey.patch_all()
 
 
 def on_starting(server):

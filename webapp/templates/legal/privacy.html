@@ -1,0 +1,432 @@
+{% extends "base.html" %}
+
+{% block title %}Privacy Policy - ShopHosting.io{% endblock %}
+
+{% block extra_css %}
+<style>
+    .legal-page {
+        padding: 40px 0 80px;
+        max-width: 900px;
+        margin: 0 auto;
+    }
+
+    .legal-header {
+        text-align: center;
+        margin-bottom: 40px;
+        padding-bottom: 30px;
+        border-bottom: 1px solid var(--border-light);
+    }
+
+    .legal-header h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 16px;
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .legal-header .last-updated {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .legal-content {
+        color: var(--text-primary);
+        line-height: 1.8;
+    }
+
+    .legal-content h2 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-top: 40px;
+        margin-bottom: 16px;
+        color: var(--text-primary);
+    }
+
+    .legal-content h3 {
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin-top: 24px;
+        margin-bottom: 12px;
+        color: var(--text-primary);
+    }
+
+    .legal-content p {
+        margin-bottom: 16px;
+        color: var(--text-secondary);
+    }
+
+    .legal-content ul, .legal-content ol {
+        margin-bottom: 16px;
+        padding-left: 24px;
+    }
+
+    .legal-content li {
+        margin-bottom: 8px;
+        color: var(--text-secondary);
+    }
+
+    .legal-content strong {
+        color: var(--text-primary);
+    }
+
+    .legal-nav {
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 40px;
+    }
+
+    .legal-nav h4 {
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-secondary);
+        margin-bottom: 12px;
+    }
+
+    .legal-nav ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        gap: 24px;
+        flex-wrap: wrap;
+    }
+
+    .legal-nav a {
+        color: var(--primary);
+        text-decoration: none;
+        font-size: 0.95rem;
+    }
+
+    .legal-nav a:hover {
+        text-decoration: underline;
+    }
+
+    .privacy-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .privacy-table th, .privacy-table td {
+        padding: 14px 16px;
+        text-align: left;
+        border-bottom: 1px solid var(--border-light);
+    }
+
+    .privacy-table th {
+        background: var(--bg-tertiary);
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .privacy-table td {
+        color: var(--text-secondary);
+    }
+
+    .privacy-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .privacy-highlight {
+        background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(16, 185, 129, 0.1));
+        border: 1px solid rgba(34, 197, 94, 0.3);
+        border-radius: 12px;
+        padding: 20px;
+        margin: 24px 0;
+    }
+
+    .privacy-highlight h4 {
+        color: #22c55e;
+        font-weight: 600;
+        margin-bottom: 12px;
+    }
+
+    .privacy-highlight ul {
+        margin: 0;
+        padding-left: 20px;
+    }
+
+    .privacy-highlight li {
+        color: var(--text-secondary);
+    }
+
+    @media (max-width: 768px) {
+        .legal-page {
+            padding: 20px 16px 60px;
+        }
+
+        .legal-header h1 {
+            font-size: 2rem;
+        }
+
+        .legal-nav ul {
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .privacy-table {
+            font-size: 0.9rem;
+        }
+
+        .privacy-table th, .privacy-table td {
+            padding: 10px 12px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="legal-page">
+        <div class="legal-header">
+            <h1>Privacy Policy</h1>
+            <p class="last-updated">Last Updated: February 2, 2026</p>
+        </div>
+
+        <div class="legal-nav">
+            <h4>Related Documents</h4>
+            <ul>
+                <li><a href="{{ url_for('terms_of_service') }}">Terms of Service</a></li>
+                <li><a href="{{ url_for('service_level_agreement') }}">Service Level Agreement (SLA)</a></li>
+            </ul>
+        </div>
+
+        <div class="legal-content">
+            <p>ShopHosting.io ("we," "us," or "our") respects your privacy. This Privacy Policy explains how we collect, use, disclose, and protect your information when you use our services.</p>
+
+            <h2>1. Information We Collect</h2>
+
+            <h3>1.1 Information You Provide</h3>
+            <ul>
+                <li><strong>Account Information:</strong> Name, email address, phone number, company name, billing address</li>
+                <li><strong>Payment Information:</strong> Credit card details (processed securely by Stripe; we do not store full card numbers)</li>
+                <li><strong>Support Communications:</strong> Messages, tickets, and chat logs with our support team</li>
+                <li><strong>Website Content:</strong> Data you upload to your hosted websites</li>
+            </ul>
+
+            <h3>1.2 Information Collected Automatically</h3>
+            <ul>
+                <li><strong>Log Data:</strong> IP addresses, browser type, operating system, referring URLs, pages visited, timestamps</li>
+                <li><strong>Usage Data:</strong> Feature usage, login frequency, dashboard interactions</li>
+                <li><strong>Performance Data:</strong> Server metrics, error logs, uptime statistics for your hosted sites</li>
+                <li><strong>Cookies:</strong> Session cookies for authentication and preferences (see Section 6)</li>
+            </ul>
+
+            <h3>1.3 Information from Third Parties</h3>
+            <ul>
+                <li><strong>Payment Processors:</strong> Transaction confirmations from Stripe</li>
+                <li><strong>Analytics Providers:</strong> Aggregated usage statistics</li>
+                <li><strong>Domain Registrars:</strong> WHOIS information if you register domains through us</li>
+            </ul>
+
+            <h2>2. How We Use Your Information</h2>
+
+            <p>We use your information to:</p>
+            <ul>
+                <li><strong>Provide Services:</strong> Host your websites, process payments, deliver support</li>
+                <li><strong>Improve Services:</strong> Analyze usage patterns, fix bugs, develop new features</li>
+                <li><strong>Communicate:</strong> Send service updates, security alerts, billing notifications</li>
+                <li><strong>Security:</strong> Detect fraud, prevent abuse, protect our infrastructure</li>
+                <li><strong>Legal Compliance:</strong> Meet regulatory requirements, respond to legal requests</li>
+            </ul>
+
+            <div class="privacy-highlight">
+                <h4>We do NOT:</h4>
+                <ul>
+                    <li>Sell your personal information to third parties</li>
+                    <li>Use your data for unrelated advertising</li>
+                    <li>Access your hosted website content except as necessary to provide services or as required by law</li>
+                </ul>
+            </div>
+
+            <h2>3. Information Sharing</h2>
+
+            <p>We may share your information with:</p>
+
+            <h3>3.1 Service Providers</h3>
+            <p>Third parties who help us operate our business:</p>
+            <ul>
+                <li><strong>Stripe:</strong> Payment processing</li>
+                <li><strong>AWS/Cloud Providers:</strong> Infrastructure hosting</li>
+                <li><strong>Email Services:</strong> Transactional emails</li>
+                <li><strong>Support Tools:</strong> Ticket management systems</li>
+            </ul>
+            <p>All service providers are contractually bound to protect your data.</p>
+
+            <h3>3.2 Legal Requirements</h3>
+            <p>We may disclose information if required by:</p>
+            <ul>
+                <li>Court orders or subpoenas</li>
+                <li>Law enforcement requests</li>
+                <li>Regulatory requirements</li>
+                <li>Protection of our legal rights</li>
+            </ul>
+
+            <h3>3.3 Business Transfers</h3>
+            <p>In the event of a merger, acquisition, or sale of assets, your information may be transferred. We will notify you of any such change.</p>
+
+            <h3>3.4 With Your Consent</h3>
+            <p>We may share information for other purposes with your explicit consent.</p>
+
+            <h2>4. Data Security</h2>
+
+            <p>We implement industry-standard security measures:</p>
+            <ul>
+                <li><strong>Encryption:</strong> TLS/SSL for data in transit; encryption at rest for sensitive data</li>
+                <li><strong>Access Controls:</strong> Role-based access; principle of least privilege</li>
+                <li><strong>Infrastructure Security:</strong> Firewalls, intrusion detection, DDoS protection</li>
+                <li><strong>Monitoring:</strong> 24/7 security monitoring and alerting</li>
+                <li><strong>Backups:</strong> Encrypted daily backups stored in geographically separate locations</li>
+                <li><strong>Employee Training:</strong> Regular security awareness training</li>
+            </ul>
+            <p>Despite these measures, no system is 100% secure. You are responsible for maintaining the security of your account credentials.</p>
+
+            <h2>5. Data Retention</h2>
+
+            <p>We retain your information as follows:</p>
+
+            <table class="privacy-table">
+                <thead>
+                    <tr>
+                        <th>Data Type</th>
+                        <th>Retention Period</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Account Information</td>
+                        <td>Duration of account + 1 year</td>
+                    </tr>
+                    <tr>
+                        <td>Billing Records</td>
+                        <td>7 years (legal requirement)</td>
+                    </tr>
+                    <tr>
+                        <td>Support Tickets</td>
+                        <td>3 years after resolution</td>
+                    </tr>
+                    <tr>
+                        <td>Server Logs</td>
+                        <td>90 days</td>
+                    </tr>
+                    <tr>
+                        <td>Backups</td>
+                        <td>30 days after deletion request</td>
+                    </tr>
+                    <tr>
+                        <td>Website Content</td>
+                        <td>30 days after account termination</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p>You may request earlier deletion subject to legal and operational requirements.</p>
+
+            <h2>6. Cookies and Tracking</h2>
+
+            <h3>6.1 Cookies We Use</h3>
+
+            <table class="privacy-table">
+                <thead>
+                    <tr>
+                        <th>Cookie Type</th>
+                        <th>Purpose</th>
+                        <th>Duration</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Essential</td>
+                        <td>Authentication, security</td>
+                        <td>Session</td>
+                    </tr>
+                    <tr>
+                        <td>Preferences</td>
+                        <td>Language, dashboard settings</td>
+                        <td>1 year</td>
+                    </tr>
+                    <tr>
+                        <td>Analytics</td>
+                        <td>Usage statistics (anonymized)</td>
+                        <td>1 year</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>6.2 Your Choices</h3>
+            <ul>
+                <li><strong>Browser Settings:</strong> You can disable cookies in your browser, but some features may not work</li>
+                <li><strong>Do Not Track:</strong> We respect DNT signals and limit tracking accordingly</li>
+                <li><strong>Opt-Out:</strong> Contact us to opt out of non-essential cookies</li>
+            </ul>
+
+            <h2>7. Your Rights</h2>
+
+            <p>Depending on your location, you may have the right to:</p>
+            <ul>
+                <li><strong>Access:</strong> Request a copy of your personal data</li>
+                <li><strong>Correction:</strong> Update inaccurate information</li>
+                <li><strong>Deletion:</strong> Request deletion of your data ("right to be forgotten")</li>
+                <li><strong>Portability:</strong> Receive your data in a machine-readable format</li>
+                <li><strong>Objection:</strong> Object to certain processing activities</li>
+                <li><strong>Restriction:</strong> Limit how we use your data</li>
+            </ul>
+
+            <p>To exercise these rights, contact <a href="mailto:privacy@shophosting.io">privacy@shophosting.io</a>. We will respond within 30 days.</p>
+
+            <h2>8. International Data Transfers</h2>
+
+            <p>Our servers are located in the United States. If you access our services from outside the US, your data will be transferred to and processed in the US. We implement appropriate safeguards for international transfers.</p>
+
+            <h2>9. Children's Privacy</h2>
+
+            <p>Our services are not intended for children under 16. We do not knowingly collect information from children. If you believe a child has provided us with personal information, contact us immediately.</p>
+
+            <h2>10. California Privacy Rights (CCPA)</h2>
+
+            <p>California residents have additional rights:</p>
+            <ul>
+                <li><strong>Right to Know:</strong> Categories of data collected and purposes</li>
+                <li><strong>Right to Delete:</strong> Request deletion of personal information</li>
+                <li><strong>Right to Opt-Out:</strong> We do not sell personal information</li>
+                <li><strong>Non-Discrimination:</strong> Equal service regardless of privacy choices</li>
+            </ul>
+
+            <p>To exercise CCPA rights, email <a href="mailto:privacy@shophosting.io">privacy@shophosting.io</a> with subject "CCPA Request."</p>
+
+            <h2>11. European Privacy Rights (GDPR)</h2>
+
+            <p>For EU/EEA residents:</p>
+            <ul>
+                <li><strong>Legal Basis:</strong> We process data based on contract performance, legitimate interests, and consent</li>
+                <li><strong>Data Controller:</strong> ShopHosting.io is the data controller</li>
+                <li><strong>Supervisory Authority:</strong> You may lodge complaints with your local data protection authority</li>
+            </ul>
+
+            <h2>12. Changes to This Policy</h2>
+
+            <p>We may update this Privacy Policy periodically. Material changes will be communicated via email or dashboard notification at least 30 days before taking effect.</p>
+
+            <h2>13. Contact Us</h2>
+
+            <p>For privacy-related questions or requests:</p>
+            <ul>
+                <li><strong>Email:</strong> <a href="mailto:privacy@shophosting.io">privacy@shophosting.io</a></li>
+                <li><strong>Support:</strong> <a href="mailto:support@shophosting.io">support@shophosting.io</a></li>
+            </ul>
+
+            <p>For data protection inquiries in the EU, contact our representative at: <a href="mailto:gdpr@shophosting.io">gdpr@shophosting.io</a></p>
+        </div>
+    </div>
+</div>
+{% endblock %}

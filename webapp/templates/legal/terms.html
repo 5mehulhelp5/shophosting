@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+
+{% block title %}Terms of Service - ShopHosting.io{% endblock %}
+
+{% block extra_css %}
+<style>
+    .legal-page {
+        padding: 40px 0 80px;
+        max-width: 900px;
+        margin: 0 auto;
+    }
+
+    .legal-header {
+        text-align: center;
+        margin-bottom: 40px;
+        padding-bottom: 30px;
+        border-bottom: 1px solid var(--border-light);
+    }
+
+    .legal-header h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 16px;
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .legal-header .last-updated {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .legal-content {
+        color: var(--text-primary);
+        line-height: 1.8;
+    }
+
+    .legal-content h2 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-top: 40px;
+        margin-bottom: 16px;
+        color: var(--text-primary);
+    }
+
+    .legal-content h3 {
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin-top: 24px;
+        margin-bottom: 12px;
+        color: var(--text-primary);
+    }
+
+    .legal-content p {
+        margin-bottom: 16px;
+        color: var(--text-secondary);
+    }
+
+    .legal-content ul, .legal-content ol {
+        margin-bottom: 16px;
+        padding-left: 24px;
+    }
+
+    .legal-content li {
+        margin-bottom: 8px;
+        color: var(--text-secondary);
+    }
+
+    .legal-content strong {
+        color: var(--text-primary);
+    }
+
+    .legal-content .disclaimer {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-light);
+        border-radius: 8px;
+        padding: 20px;
+        margin: 24px 0;
+    }
+
+    .legal-nav {
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 40px;
+    }
+
+    .legal-nav h4 {
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-secondary);
+        margin-bottom: 12px;
+    }
+
+    .legal-nav ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        gap: 24px;
+        flex-wrap: wrap;
+    }
+
+    .legal-nav a {
+        color: var(--primary);
+        text-decoration: none;
+        font-size: 0.95rem;
+    }
+
+    .legal-nav a:hover {
+        text-decoration: underline;
+    }
+
+    @media (max-width: 768px) {
+        .legal-page {
+            padding: 20px 16px 60px;
+        }
+
+        .legal-header h1 {
+            font-size: 2rem;
+        }
+
+        .legal-nav ul {
+            flex-direction: column;
+            gap: 12px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="legal-page">
+        <div class="legal-header">
+            <h1>Terms of Service</h1>
+            <p class="last-updated">Last Updated: February 2, 2026</p>
+        </div>
+
+        <div class="legal-nav">
+            <h4>Related Documents</h4>
+            <ul>
+                <li><a href="{{ url_for('service_level_agreement') }}">Service Level Agreement (SLA)</a></li>
+                <li><a href="{{ url_for('privacy_policy') }}">Privacy Policy</a></li>
+            </ul>
+        </div>
+
+        <div class="legal-content">
+            <h2>1. Agreement to Terms</h2>
+            <p>By accessing or using ShopHosting.io ("Service"), you agree to be bound by these Terms of Service ("Terms"). If you do not agree to these Terms, do not use the Service.</p>
+
+            <h2>2. Description of Service</h2>
+            <p>ShopHosting.io provides managed WooCommerce and Magento hosting services, including but not limited to server infrastructure, automated backups, performance monitoring, and technical support.</p>
+
+            <h2>3. Account Registration</h2>
+            <p>You must provide accurate, complete, and current information when creating an account. You are responsible for maintaining the confidentiality of your account credentials and for all activities under your account.</p>
+
+            <h2>4. Billing and Payment</h2>
+
+            <h3>4.1 Billing Cycle</h3>
+            <p>All services are billed on a monthly basis. Payment is due at the beginning of each billing cycle.</p>
+
+            <h3>4.2 Payment Methods</h3>
+            <p>We accept major credit cards and other payment methods as displayed during checkout.</p>
+
+            <h3>4.3 Failed Payments</h3>
+            <p>If payment fails, we will attempt to collect payment for up to 7 days. Services may be suspended after 7 days of non-payment and terminated after 30 days.</p>
+
+            <h2>5. Refund Policy</h2>
+
+            <h3>5.1 30-Day Money-Back Guarantee</h3>
+            <p>New customers may request a full refund within 30 days of initial signup, no questions asked.</p>
+
+            <h3>5.2 Service Failure Refunds</h3>
+            <p>Refunds for service failures beyond the initial 30-day period are evaluated on a case-by-case basis. Contact support to discuss your situation.</p>
+
+            <h3>5.3 Non-Refundable Items</h3>
+            <p>Domain registration fees, third-party licenses, and setup fees for custom configurations are non-refundable.</p>
+
+            <h2>6. Acceptable Use Policy</h2>
+
+            <h3>6.1 Prohibited Activities</h3>
+            <p>You may NOT use the Service for:</p>
+            <ul>
+                <li><strong>Spam:</strong> Sending unsolicited bulk email or messages</li>
+                <li><strong>Illegal Content:</strong> Hosting content that violates any applicable law</li>
+                <li><strong>Malware:</strong> Distributing viruses, trojans, or other malicious software</li>
+                <li><strong>Cryptocurrency Mining:</strong> Running cryptocurrency miners or related software</li>
+                <li><strong>Phishing:</strong> Hosting phishing sites or conducting fraud</li>
+                <li><strong>Copyright Infringement:</strong> Hosting pirated content or violating intellectual property rights</li>
+                <li><strong>Resource Abuse:</strong> Running processes that negatively impact other customers</li>
+                <li><strong>Adult Content:</strong> Hosting pornographic or sexually explicit material (unless on a dedicated server with prior approval)</li>
+            </ul>
+
+            <h3>6.2 Enforcement</h3>
+            <p>Violations may result in immediate suspension or termination without refund. We reserve the right to remove content that violates these Terms.</p>
+
+            <h2>7. Service Availability</h2>
+            <p>We strive to maintain high availability. See our <a href="{{ url_for('service_level_agreement') }}">Service Level Agreement (SLA)</a> for uptime guarantees and remedies.</p>
+
+            <h2>8. Data and Backups</h2>
+
+            <h3>8.1 Customer Data</h3>
+            <p>You retain all rights to your data. We will not access, use, or disclose your data except as necessary to provide the Service or as required by law.</p>
+
+            <h3>8.2 Backups</h3>
+            <p>We perform daily automated backups retained for 30 days. However, you are ultimately responsible for maintaining your own backups. We are not liable for data loss.</p>
+
+            <h2>9. Limitation of Liability</h2>
+
+            <h3>9.1 Disclaimer of Warranties</h3>
+            <div class="disclaimer">
+                <p>THE SERVICE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.</p>
+            </div>
+
+            <h3>9.2 Limitation of Damages</h3>
+            <div class="disclaimer">
+                <p>TO THE MAXIMUM EXTENT PERMITTED BY LAW, SHOPHOSTING.IO AND ITS AFFILIATES, OFFICERS, EMPLOYEES, AGENTS, AND LICENSORS SHALL NOT BE LIABLE FOR:</p>
+                <ul>
+                    <li>Any indirect, incidental, special, consequential, or punitive damages</li>
+                    <li>Any loss of profits, revenue, data, or business opportunities</li>
+                    <li>Any damages arising from service interruptions, data loss, or security breaches</li>
+                </ul>
+            </div>
+
+            <h3>9.3 Maximum Liability</h3>
+            <p>IN NO EVENT SHALL OUR TOTAL LIABILITY EXCEED THE AMOUNTS PAID BY YOU TO SHOPHOSTING.IO IN THE THREE (3) MONTHS PRECEDING THE CLAIM.</p>
+
+            <h3>9.4 Essential Purpose</h3>
+            <p>THE LIMITATIONS IN THIS SECTION APPLY EVEN IF ANY REMEDY FAILS OF ITS ESSENTIAL PURPOSE.</p>
+
+            <h2>10. Indemnification</h2>
+            <p>You agree to indemnify and hold harmless ShopHosting.io and its affiliates from any claims, damages, losses, or expenses (including reasonable attorney's fees) arising from your use of the Service or violation of these Terms.</p>
+
+            <h2>11. Account Termination</h2>
+
+            <h3>11.1 Termination by You</h3>
+            <p>You may cancel your account at any time through the dashboard or by contacting support. No refunds for partial months.</p>
+
+            <h3>11.2 Termination by Us</h3>
+            <p>We may suspend or terminate your account for violation of these Terms, non-payment, or at our discretion with 30 days notice.</p>
+
+            <h3>11.3 Effect of Termination</h3>
+            <p>Upon termination, your data will be retained for 30 days, after which it may be permanently deleted.</p>
+
+            <h2>12. Changes to Terms</h2>
+            <p>We may modify these Terms at any time. Material changes will be communicated via email or dashboard notification at least 30 days before taking effect. Continued use after changes constitutes acceptance.</p>
+
+            <h2>13. Governing Law</h2>
+            <p>These Terms are governed by the laws of the State of Delaware, United States, without regard to conflict of law principles.</p>
+
+            <h2>14. Dispute Resolution</h2>
+            <p>Any disputes shall be resolved through binding arbitration in accordance with the rules of the American Arbitration Association. Class actions and jury trials are waived.</p>
+
+            <h2>15. Contact</h2>
+            <p>For questions about these Terms, contact us at:</p>
+            <ul>
+                <li>Email: <a href="mailto:legal@shophosting.io">legal@shophosting.io</a></li>
+                <li>Support: <a href="mailto:support@shophosting.io">support@shophosting.io</a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
