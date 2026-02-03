@@ -538,6 +538,9 @@
 {% block dashboard_js_block %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" nonce="{{ csp_nonce() }}"></script>
 <script nonce="{{ csp_nonce() }}">
+    // CSRF Token for secure API requests
+    const csrfToken = '{{ csrf_token() }}';
+
     let restartCooldown = false;
     let logsExpanded = true;
     let cpuChart, memoryChart, networkChart;
@@ -740,7 +743,7 @@
             const response = await fetch('/api/container/restart', {
                 method: 'POST',
                 credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken }
             });
             const data = await response.json();
 

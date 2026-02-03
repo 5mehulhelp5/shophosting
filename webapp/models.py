@@ -13,6 +13,22 @@ from werkzeug.security import generate_password_hash, check_password_hash
 db_pool = None       # Primary pool for writes
 db_pool_read = None  # Read replica pool (optional)
 
+# SQL Injection Prevention: Allowed columns for dynamic UPDATE queries
+# These whitelists prevent SQL injection by ensuring only valid column names
+# can be interpolated into queries
+ALLOWED_CUSTOMER_UPDATE_COLUMNS = frozenset({
+    'company_name', 'timezone'
+})
+
+ALLOWED_NOTIFICATION_SETTINGS_COLUMNS = frozenset({
+    'email_security_alerts', 'email_login_alerts', 'email_billing_alerts',
+    'email_maintenance_alerts', 'email_marketing'
+})
+
+ALLOWED_WEBHOOK_UPDATE_COLUMNS = frozenset({
+    'name', 'url', 'events', 'is_active'
+})
+
 
 def init_db_pool():
     """Initialize database connection pool(s)"""
@@ -3703,15 +3719,16 @@ class Customer2FASettings:
             cursor.close()
             conn.close()
 
-    def use_backup_code(self, used_code_hash):
-        """Mark a backup code as used by removing it from the list"""
+    def use_backup_code(self, used_code_index):
+        """Mark a backup code as used by removing it from the list by index"""
         import json
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
-            # Remove used code from backup codes
+            # Remove used code from backup codes by index
             codes = json.loads(self.backup_codes) if self.backup_codes else []
-            codes = [c for c in codes if c != used_code_hash]
+            if 0 <= used_code_index < len(codes):
+                codes.pop(used_code_index)
             new_codes_json = json.dumps(codes)
 
             cursor.execute("""
@@ -4013,13 +4030,20 @@ class CustomerNotificationSettings:
             conn.close()
 
     def update(self, **kwargs):
-        """Update notification settings"""
+        """Update notification settings
+
+        Only columns in ALLOWED_NOTIFICATION_SETTINGS_COLUMNS can be updated.
+        This prevents SQL injection via column name manipulation.
+        """
         conn = get_db_connection()
         cursor = conn.cursor()
         try:
             fields = []
             values = []
             for key, value in kwargs.items():
+                # Validate column name against whitelist to prevent SQL injection
+                if key not in ALLOWED_NOTIFICATION_SETTINGS_COLUMNS:
+                    raise ValueError(f"Invalid column for update: {key}")
                 if hasattr(self, key):
                     fields.append(f"{key} = %s")
                     values.append(value)
@@ -4260,7 +4284,11 @@ class CustomerWebhook:
             conn.close()
 
     def update(self, **kwargs):
-        """Update webhook settings"""
+        """Update webhook settings
+
+        Only columns in ALLOWED_WEBHOOK_UPDATE_COLUMNS can be updated.
+        This prevents SQL injection via column name manipulation.
+        """
         import json
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -4268,6 +4296,9 @@ class CustomerWebhook:
             fields = []
             values = []
             for key, value in kwargs.items():
+                # Validate column name against whitelist to prevent SQL injection
+                if key not in ALLOWED_WEBHOOK_UPDATE_COLUMNS:
+                    raise ValueError(f"Invalid column for update: {key}")
                 if hasattr(self, key):
                     if key == 'events' and isinstance(value, list):
                         value = json.dumps(value)

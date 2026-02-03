@@ -255,6 +255,9 @@
 (function() {
     'use strict';
 
+    // CSRF Token for secure API requests
+    var csrfToken = '{{ csrf_token() }}';
+
     // Platform from server
     var platform = '{{ customer.platform }}';
 
@@ -333,7 +336,7 @@
             var response = await fetch('/dashboard/terminal/api/session', {
                 method: 'POST',
                 credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken }
             });
 
             if (!response.ok) {
@@ -389,7 +392,7 @@
         try {
             var response = await fetch('/dashboard/terminal/api/execute', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
                 credentials: 'same-origin',
                 body: JSON.stringify({
                     session_id: sessionId,
