@@ -39,7 +39,7 @@ def init_db_pool():
         'password': db_password,
         'database': os.getenv('DB_NAME', 'shophosting_db'),
         'pool_name': 'shophosting_pool',
-        'pool_size': int(os.getenv('DB_POOL_SIZE', '5'))
+        'pool_size': int(os.getenv('DB_POOL_SIZE', '3'))
     }
 
     try:
