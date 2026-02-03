@@ -508,6 +508,9 @@ csrf.exempt(app.view_functions['leads.speed_battle_start'])
 csrf.exempt(app.view_functions['leads.speed_battle_unlock'])
 csrf.exempt(app.view_functions['leads.speed_battle_share'])
 
+# Exempt speed battle status endpoint from rate limiting (polled frequently by frontend)
+limiter.exempt(app.view_functions['leads.speed_battle_status'])
+
 
 @login_manager.user_loader
 def load_user(user_id):
