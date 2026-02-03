@@ -151,6 +151,41 @@
     cursor: not-allowed;
 }
 
+.btn-danger-outline {
+    background: transparent;
+    color: #ef4444;
+    border: 1px solid #ef4444;
+}
+
+.btn-danger-outline:hover {
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.btn-danger-outline.confirming {
+    background: #ef4444;
+    color: white;
+}
+
+.backup-item.deleting {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.backup-item.fade-out {
+    animation: fadeOut 0.3s ease forwards;
+}
+
+@keyframes fadeOut {
+    to {
+        opacity: 0;
+        transform: translateX(-20px);
+        height: 0;
+        padding: 0;
+        margin: 0;
+        overflow: hidden;
+    }
+}
+
 .status-banner {
     padding: 16px 20px;
     border-radius: var(--radius-md);
@@ -378,6 +413,9 @@
                         <div class="restore-option" data-type="files">Files only</div>
                         <div class="restore-option" data-type="both">Full restore</div>
                     </div>
+                    <button class="btn btn-danger-outline delete-backup" data-snapshot="{{ backup.id }}" {% if active_job %}disabled{% endif %}>
+                        Delete
+                    </button>
                 </div>
             </div>
             {% endfor %}
@@ -618,4 +656,60 @@ setInterval(async () => {
     }
 }, 5000);
 {% endif %}
+
+// Delete backup functionality
+document.querySelectorAll('.delete-backup').forEach(btn => {
+    let confirmTimeout = null;
+
+    btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const snapshotId = btn.dataset.snapshot;
+        const backupItem = btn.closest('.backup-item');
+
+        // If already in confirming state, proceed with delete
+        if (btn.classList.contains('confirming')) {
+            clearTimeout(confirmTimeout);
+            btn.disabled = true;
+            btn.textContent = 'Deleting...';
+            backupItem.classList.add('deleting');
+
+            try {
+                const response = await fetch(`/backups/${snapshotId}/delete`, {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': csrfToken }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    backupItem.classList.remove('deleting');
+                    backupItem.classList.add('fade-out');
+                    setTimeout(() => backupItem.remove(), 300);
+                } else {
+                    alert(data.message || 'Failed to delete backup');
+                    btn.disabled = false;
+                    btn.textContent = 'Delete';
+                    btn.classList.remove('confirming');
+                    backupItem.classList.remove('deleting');
+                }
+            } catch (err) {
+                alert('An error occurred');
+                btn.disabled = false;
+                btn.textContent = 'Delete';
+                btn.classList.remove('confirming');
+                backupItem.classList.remove('deleting');
+            }
+        } else {
+            // Enter confirming state
+            btn.classList.add('confirming');
+            btn.textContent = 'Confirm?';
+
+            // Reset after 3 seconds
+            confirmTimeout = setTimeout(() => {
+                btn.classList.remove('confirming');
+                btn.textContent = 'Delete';
+            }, 3000);
+        }
+    });
+});
 {% endblock %}

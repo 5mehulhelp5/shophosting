@@ -3907,6 +3907,81 @@ def backup_status():
         })
 
 
+@app.route('/backups/<snapshot_id>/delete', methods=['POST'])
+@login_required
+def backup_delete(snapshot_id):
+    """Delete a manual backup snapshot"""
+    import subprocess
+
+    customer = Customer.get_by_id(current_user.id)
+
+    # Verify snapshot belongs to this customer by checking tags
+    try:
+        result = subprocess.run(
+            ['sudo', 'bash', '-c',
+             f'export RESTIC_REPOSITORY="sftp:sh-backup@15.204.249.219:/home/sh-backup/backups" && '
+             f'export RESTIC_PASSWORD_FILE="/root/.restic-password" && '
+             f'export HOME=/root && '
+             f'restic snapshots --json {snapshot_id}'],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode != 0:
+            return jsonify({'success': False, 'message': 'Backup not found'}), 404
+
+        import json
+        snapshots = json.loads(result.stdout)
+        if not snapshots:
+            return jsonify({'success': False, 'message': 'Backup not found'}), 404
+
+        snapshot = snapshots[0]
+        tags = snapshot.get('tags', [])
+
+        # Security: Verify this snapshot belongs to the customer
+        customer_tag = f"customer-{customer.id}"
+        if customer_tag not in tags:
+            logger.warning(f"Customer {customer.id} attempted to delete snapshot {snapshot_id} belonging to another customer")
+            return jsonify({'success': False, 'message': 'Backup not found'}), 404
+
+        # Security: Only allow deleting manual backups (not daily)
+        if 'manual' not in tags:
+            return jsonify({'success': False, 'message': 'Cannot delete automated backups'}), 400
+
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'message': 'Request timed out'}), 504
+    except Exception as e:
+        logger.error(f"Error verifying snapshot {snapshot_id}: {e}")
+        return jsonify({'success': False, 'message': 'Failed to verify backup'}), 500
+
+    # Delete the snapshot
+    try:
+        result = subprocess.run(
+            ['sudo', 'bash', '-c',
+             f'export RESTIC_REPOSITORY="sftp:sh-backup@15.204.249.219:/home/sh-backup/backups" && '
+             f'export RESTIC_PASSWORD_FILE="/root/.restic-password" && '
+             f'export HOME=/root && '
+             f'restic forget {snapshot_id} --prune'],
+            capture_output=True,
+            text=True,
+            timeout=120  # Pruning can take time
+        )
+
+        if result.returncode != 0:
+            logger.error(f"Failed to delete snapshot {snapshot_id}: {result.stderr}")
+            return jsonify({'success': False, 'message': 'Failed to delete backup'}), 500
+
+        logger.info(f"Customer {customer.id} deleted backup snapshot {snapshot_id}")
+        return jsonify({'success': True, 'message': 'Backup deleted'})
+
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'message': 'Delete operation timed out'}), 504
+    except Exception as e:
+        logger.error(f"Error deleting snapshot {snapshot_id}: {e}")
+        return jsonify({'success': False, 'message': 'Failed to delete backup'}), 500
+
+
 def get_customer_manual_backups(customer_id, limit=5):
     """Get manual backups for a customer from restic"""
     import subprocess
