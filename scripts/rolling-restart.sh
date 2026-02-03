@@ -139,6 +139,13 @@ rolling_restart() {
 
     log_info "Rolling restart completed successfully!"
     echo ""
+
+    # Restart workers if models changed
+    if [[ -x "/opt/shophosting/scripts/restart-workers-if-models-changed.sh" ]]; then
+        echo "Checking if workers need restart..."
+        /opt/shophosting/scripts/restart-workers-if-models-changed.sh "${GIT_PREV_HEAD:-HEAD~1}" "${GIT_HEAD:-HEAD}" || true
+    fi
+
     show_status
 }
 
