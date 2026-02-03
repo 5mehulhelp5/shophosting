@@ -22,6 +22,7 @@ from flask_caching import Cache
 from flask_talisman import Talisman
 from wtforms import StringField, PasswordField, SelectField, SubmitField, HiddenField, TextAreaField
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 from wtforms.validators import DataRequired, Email, Length, EqualTo, ValidationError
 from dotenv import load_dotenv
 import redis
@@ -326,7 +327,7 @@ def ratelimit_handler(e):
 # =============================================================================
 
 # Session idle timeout (30 minutes)
-SESSION_IDLE_TIMEOUT = int(os.getenv('SESSION_IDLE_TIMEOUT', '1800'))  # 30 minutes default
+SESSION_IDLE_TIMEOUT = int(os.getenv('SESSION_IDLE_TIMEOUT', '900'))  # 15 minutes default
 
 
 @app.before_request
@@ -477,10 +478,8 @@ app.register_blueprint(terminal_bp)
 limiter.limit("60 per minute")(app.view_functions['terminal.execute_command'])
 limiter.limit("10 per minute")(app.view_functions['terminal.create_session'])
 
-# Exempt terminal API endpoints from CSRF (JSON API)
-csrf.exempt(app.view_functions['terminal.create_session'])
-csrf.exempt(app.view_functions['terminal.execute_command'])
-csrf.exempt(app.view_functions['terminal.delete_session'])
+# Terminal endpoints now use CSRF protection via X-CSRFToken header
+# csrf.exempt for terminal endpoints removed - CSRF tokens required
 
 # Exempt metrics endpoints from rate limiting (Prometheus scrapes frequently)
 limiter.exempt(app.view_functions['metrics.prometheus_metrics'])
@@ -997,13 +996,21 @@ def auth_2fa_verify():
         next_page = session.pop('pending_2fa_next', None)
         return jsonify({'success': True, 'redirect': next_page or url_for('dashboard')})
 
-    # Try backup code
+    # Try backup code - check against werkzeug hashes
     if len(code) == 8 and tfa_settings.backup_codes:
-        code_hash = hashlib.sha256(code.upper().encode()).hexdigest()
         backup_codes = json.loads(tfa_settings.backup_codes)
-        if code_hash in backup_codes:
-            # Valid backup code
-            tfa_settings.use_backup_code(code_hash)
+        code_upper = code.upper()
+        matched_index = None
+
+        # Check each stored hash against the input code
+        for idx, stored_hash in enumerate(backup_codes):
+            if check_password_hash(stored_hash, code_upper):
+                matched_index = idx
+                break
+
+        if matched_index is not None:
+            # Valid backup code - remove by index
+            tfa_settings.use_backup_code(matched_index)
 
             session.pop('pending_2fa_customer_id', None)
             session.pop('2fa_attempts', None)
@@ -1673,7 +1680,6 @@ def dashboard_settings():
 # =============================================================================
 
 @app.route('/api/settings/password', methods=['POST'])
-@csrf.exempt
 @login_required
 @limiter.limit("5 per hour")
 def api_settings_password():
@@ -1703,7 +1709,6 @@ def api_settings_password():
 
 
 @app.route('/api/settings/2fa/setup', methods=['POST'])
-@csrf.exempt
 @login_required
 @limiter.limit("10 per hour")
 def api_settings_2fa_setup():
@@ -1748,7 +1753,6 @@ def api_settings_2fa_setup():
 
 
 @app.route('/api/settings/2fa/verify', methods=['POST'])
-@csrf.exempt
 @login_required
 @limiter.limit("10 per hour")
 def api_settings_2fa_verify():
@@ -1771,15 +1775,16 @@ def api_settings_2fa_verify():
     if not totp.verify(code, valid_window=1):
         return jsonify({'success': False, 'error': 'Invalid code'}), 401
 
-    # Generate backup codes
+    # Generate backup codes - plaintext shown once, then hashed for storage
     backup_codes = []
     backup_codes_hashed = []
     for _ in range(10):
         code = secrets.token_hex(4).upper()  # 8-char codes
         backup_codes.append(code)
-        backup_codes_hashed.append(hashlib.sha256(code.encode()).hexdigest())
+        # Use werkzeug's secure password hashing (pbkdf2 with salt)
+        backup_codes_hashed.append(generate_password_hash(code))
 
-    # Enable 2FA
+    # Enable 2FA with hashed backup codes
     tfa_settings.enable(json.dumps(backup_codes_hashed))
 
     customer = Customer.get_by_id(current_user.id)
@@ -1793,7 +1798,6 @@ def api_settings_2fa_verify():
 
 
 @app.route('/api/settings/2fa/disable', methods=['POST'])
-@csrf.exempt
 @login_required
 @limiter.limit("5 per hour")
 def api_settings_2fa_disable():
@@ -1820,7 +1824,6 @@ def api_settings_2fa_disable():
 
 
 @app.route('/api/settings/2fa/backup-codes/regenerate', methods=['POST'])
-@csrf.exempt
 @login_required
 @limiter.limit("5 per hour")
 def api_settings_2fa_backup_codes_regenerate():
@@ -1839,13 +1842,14 @@ def api_settings_2fa_backup_codes_regenerate():
     if not tfa_settings or not tfa_settings.is_enabled:
         return jsonify({'success': False, 'error': '2FA is not enabled'}), 400
 
-    # Generate new backup codes
+    # Generate new backup codes - plaintext shown once, then hashed for storage
     backup_codes = []
     backup_codes_hashed = []
     for _ in range(10):
         code = secrets.token_hex(4).upper()
         backup_codes.append(code)
-        backup_codes_hashed.append(hashlib.sha256(code.encode()).hexdigest())
+        # Use werkzeug's secure password hashing (pbkdf2 with salt)
+        backup_codes_hashed.append(generate_password_hash(code))
 
     tfa_settings.regenerate_backup_codes(json.dumps(backup_codes_hashed))
 
@@ -1880,7 +1884,6 @@ def api_settings_sessions():
 
 
 @app.route('/api/settings/sessions/logout-all', methods=['POST'])
-@csrf.exempt
 @login_required
 @limiter.limit("5 per hour")
 def api_settings_logout_all():
@@ -1933,7 +1936,6 @@ def api_settings_login_history():
 # =============================================================================
 
 @app.route('/api/settings/profile', methods=['POST'])
-@csrf.exempt
 @login_required
 def api_settings_profile():
     """Update profile information"""
@@ -1948,7 +1950,6 @@ def api_settings_profile():
 
 
 @app.route('/api/settings/email/change', methods=['POST'])
-@csrf.exempt
 @login_required
 @limiter.limit("3 per hour")
 def api_settings_email_change():
@@ -2047,7 +2048,6 @@ def api_settings_notifications_get():
 
 
 @app.route('/api/settings/notifications', methods=['POST'])
-@csrf.exempt
 @login_required
 def api_settings_notifications_update():
     """Update notification preferences"""
@@ -2086,7 +2086,6 @@ def api_settings_api_keys_list():
 
 
 @app.route('/api/settings/api-keys', methods=['POST'])
-@csrf.exempt
 @login_required
 @limiter.limit("10 per hour")
 def api_settings_api_keys_create():
@@ -2127,7 +2126,6 @@ def api_settings_api_keys_create():
 
 
 @app.route('/api/settings/api-keys/<int:key_id>', methods=['DELETE'])
-@csrf.exempt
 @login_required
 def api_settings_api_keys_revoke(key_id):
     """Revoke an API key"""
@@ -2166,7 +2164,6 @@ def api_settings_webhooks_list():
 
 
 @app.route('/api/settings/webhooks', methods=['POST'])
-@csrf.exempt
 @login_required
 @limiter.limit("10 per hour")
 def api_settings_webhooks_create():
@@ -2214,7 +2211,6 @@ def api_settings_webhooks_create():
 
 
 @app.route('/api/settings/webhooks/<int:webhook_id>', methods=['PUT'])
-@csrf.exempt
 @login_required
 def api_settings_webhooks_update(webhook_id):
     """Update a webhook"""
@@ -2248,7 +2244,6 @@ def api_settings_webhooks_update(webhook_id):
 
 
 @app.route('/api/settings/webhooks/<int:webhook_id>', methods=['DELETE'])
-@csrf.exempt
 @login_required
 def api_settings_webhooks_delete(webhook_id):
     """Delete a webhook"""
@@ -2263,7 +2258,6 @@ def api_settings_webhooks_delete(webhook_id):
 
 
 @app.route('/api/settings/data-export', methods=['POST'])
-@csrf.exempt
 @login_required
 @limiter.limit("3 per day")
 def api_settings_data_export():
@@ -2349,7 +2343,6 @@ def settings_export_download():
 
 
 @app.route('/api/settings/account/delete', methods=['POST'])
-@csrf.exempt
 @login_required
 @limiter.limit("3 per day")
 def api_settings_account_delete():
@@ -2399,7 +2392,6 @@ def api_settings_account_delete_status():
 
 
 @app.route('/api/settings/account/delete/cancel', methods=['POST'])
-@csrf.exempt
 @login_required
 def api_settings_account_delete_cancel():
     """Cancel account deletion"""
@@ -2758,7 +2750,6 @@ def api_get_automation_preferences():
 @app.route('/api/customer/automation-preferences', methods=['PUT'])
 @login_required
 @limiter.limit("10 per minute")
-@csrf.exempt
 def api_update_automation_preferences():
     """
     Update automation preferences for the current customer.
@@ -2898,7 +2889,6 @@ def api_container_status():
 @app.route('/api/container/restart', methods=['POST'])
 @login_required
 @limiter.limit("1 per 5 minutes", error_message="Please wait 5 minutes between restarts.")
-@csrf.exempt
 def api_container_restart():
     """Restart container for current customer"""
     import subprocess
@@ -3130,7 +3120,6 @@ def api_credentials():
 @app.route('/api/backup', methods=['POST'])
 @login_required
 @limiter.limit("3 per hour", error_message="Too many backup requests. Please try again later.")
-@csrf.exempt
 def api_backup():
     """API endpoint for triggering a customer backup"""
     import subprocess
@@ -3172,7 +3161,6 @@ def api_backup():
 
 @app.route('/api/backup/status')
 @login_required
-@csrf.exempt
 def api_backup_status():
     """API endpoint for checking backup status and recent snapshots"""
     import subprocess
@@ -3231,7 +3219,6 @@ def api_backup_status():
 
 @app.route('/api/backup/restore', methods=['POST'])
 @login_required
-@csrf.exempt
 def api_backup_restore():
     """API endpoint for restoring from a backup snapshot"""
     import subprocess

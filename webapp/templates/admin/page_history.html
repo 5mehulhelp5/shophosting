@@ -42,7 +42,11 @@
                             {% endif %}
                         </td>
                         <td>
-                            {{ version.change_summary or '<span class="text-muted">No summary</span>'|safe }}
+                            {% if version.change_summary %}
+                                {{ version.change_summary }}
+                            {% else %}
+                                <span class="text-muted">No summary</span>
+                            {% endif %}
                         </td>
                         <td>
                             {{ version.created_at }}
@@ -82,8 +86,9 @@ function confirmRollback() {
 }
 
 function compareVersion(versionId) {
-    const currentContent = {{ content|tojson }};
-    const versionContent = {{ versions|tojson }}.find(v => v.id === versionId);
+    // Note: content and versions are server-controlled data serialized to JSON
+    const currentContent = {{ content|tojson|safe }};
+    const versionContent = {{ versions|tojson|safe }}.find(v => v.id === versionId);
     
     if (!versionContent) {
         alert('Version not found');

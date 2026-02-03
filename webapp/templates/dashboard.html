@@ -971,6 +971,9 @@
 
 {% if customer.status == 'active' and credentials %}
 <script nonce="{{ csp_nonce() }}">
+    // CSRF Token for secure API requests
+    const csrfToken = '{{ csrf_token() }}';
+
     // Site Health Functions
     let restartCooldown = false;
     let logsExpanded = false;
@@ -1045,7 +1048,8 @@
             const response = await fetch('/api/container/restart', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
                 }
             });
             const data = await response.json();

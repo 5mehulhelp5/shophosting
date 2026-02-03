@@ -1517,6 +1517,9 @@
 {% endblock %}
 
 {% block dashboard_js %}
+// CSRF Token for secure API requests
+const csrfToken = '{{ csrf_token() }}';
+
 // Modal functions
 function openModal(id) {
     document.getElementById(id).classList.add('open');
@@ -1602,7 +1605,7 @@ async function changePassword(e) {
     try {
         var response = await fetch('/api/settings/password', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
             body: JSON.stringify({
                 current_password: currentPassword,
                 new_password: newPassword
@@ -1645,7 +1648,7 @@ async function startTwoFactorSetup() {
     try {
         var response = await fetch('/api/settings/2fa/setup', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken }
         });
 
         var data = await response.json();
@@ -1727,7 +1730,7 @@ async function verify2FACode() {
     try {
         var response = await fetch('/api/settings/2fa/verify', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
             body: JSON.stringify({ code: code })
         });
 
@@ -1766,7 +1769,7 @@ async function disable2FA(e) {
     try {
         var response = await fetch('/api/settings/2fa/disable', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
             body: JSON.stringify({ password: password })
         });
 
@@ -1799,7 +1802,7 @@ async function regenerateBackupCodes() {
     try {
         var response = await fetch('/api/settings/2fa/backup-codes/regenerate', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
             body: JSON.stringify({ password: password })
         });
 
@@ -1835,7 +1838,7 @@ async function logoutAllSessions(e) {
     try {
         var response = await fetch('/api/settings/sessions/logout-all', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
             body: JSON.stringify({ password: password })
         });
 
@@ -1920,7 +1923,7 @@ document.getElementById('timezone-select').addEventListener('change', async func
     try {
         var response = await fetch('/api/settings/profile', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
             body: JSON.stringify({ timezone: timezone })
         });
         var data = await response.json();
@@ -1949,7 +1952,7 @@ document.querySelectorAll('[id^="notif-"]').forEach(function(toggle) {
         try {
             var response = await fetch('/api/settings/notifications', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
                 body: JSON.stringify(settings)
             });
             var data = await response.json();
@@ -1985,7 +1988,7 @@ async function createApiKey() {
     try {
         var response = await fetch('/api/settings/api-keys', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
             body: JSON.stringify({ name: name, scopes: scopes })
         });
 
@@ -2015,7 +2018,7 @@ async function revokeApiKey(keyId) {
     try {
         var response = await fetch('/api/settings/api-keys/' + keyId, {
             method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken }
         });
 
         var data = await response.json();
@@ -2060,7 +2063,7 @@ async function createWebhook() {
     try {
         var response = await fetch('/api/settings/webhooks', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
             body: JSON.stringify({ name: name, url: url, events: events })
         });
 
@@ -2090,7 +2093,7 @@ async function deleteWebhook(webhookId) {
     try {
         var response = await fetch('/api/settings/webhooks/' + webhookId, {
             method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken }
         });
 
         var data = await response.json();
@@ -2116,7 +2119,7 @@ async function requestDataExport(btn) {
     try {
         var response = await fetch('/api/settings/data-export', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken }
         });
 
         var data = await response.json();
@@ -2144,7 +2147,7 @@ async function cancelDeletion(btn) {
     try {
         var response = await fetch('/api/settings/account/delete/cancel', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken }
         });
 
         var data = await response.json();
@@ -2183,7 +2186,7 @@ async function deleteAccount(e) {
     try {
         var response = await fetch('/api/settings/account/delete', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
             body: JSON.stringify({ password: password, reason: reason })
         });
 
