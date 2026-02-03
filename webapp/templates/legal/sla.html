@@ -1,0 +1,430 @@
+{% extends "base.html" %}
+
+{% block title %}Service Level Agreement - ShopHosting.io{% endblock %}
+
+{% block extra_css %}
+<style>
+    .legal-page {
+        padding: 40px 0 80px;
+        max-width: 900px;
+        margin: 0 auto;
+    }
+
+    .legal-header {
+        text-align: center;
+        margin-bottom: 40px;
+        padding-bottom: 30px;
+        border-bottom: 1px solid var(--border-light);
+    }
+
+    .legal-header h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 16px;
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .legal-header .last-updated {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .legal-content {
+        color: var(--text-primary);
+        line-height: 1.8;
+    }
+
+    .legal-content h2 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-top: 40px;
+        margin-bottom: 16px;
+        color: var(--text-primary);
+    }
+
+    .legal-content h3 {
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin-top: 24px;
+        margin-bottom: 12px;
+        color: var(--text-primary);
+    }
+
+    .legal-content p {
+        margin-bottom: 16px;
+        color: var(--text-secondary);
+    }
+
+    .legal-content ul, .legal-content ol {
+        margin-bottom: 16px;
+        padding-left: 24px;
+    }
+
+    .legal-content li {
+        margin-bottom: 8px;
+        color: var(--text-secondary);
+    }
+
+    .legal-content strong {
+        color: var(--text-primary);
+    }
+
+    .legal-nav {
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 40px;
+    }
+
+    .legal-nav h4 {
+        font-size: 0.9rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--text-secondary);
+        margin-bottom: 12px;
+    }
+
+    .legal-nav ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        gap: 24px;
+        flex-wrap: wrap;
+    }
+
+    .legal-nav a {
+        color: var(--primary);
+        text-decoration: none;
+        font-size: 0.95rem;
+    }
+
+    .legal-nav a:hover {
+        text-decoration: underline;
+    }
+
+    .sla-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .sla-table th, .sla-table td {
+        padding: 14px 16px;
+        text-align: left;
+        border-bottom: 1px solid var(--border-light);
+    }
+
+    .sla-table th {
+        background: var(--bg-tertiary);
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .sla-table td {
+        color: var(--text-secondary);
+    }
+
+    .sla-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .highlight-box {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1));
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        border-radius: 12px;
+        padding: 24px;
+        margin: 24px 0;
+        text-align: center;
+    }
+
+    .highlight-box .big-number {
+        font-size: 3rem;
+        font-weight: 700;
+        background: var(--gradient-primary);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .highlight-box p {
+        margin: 8px 0 0;
+        color: var(--text-secondary);
+    }
+
+    @media (max-width: 768px) {
+        .legal-page {
+            padding: 20px 16px 60px;
+        }
+
+        .legal-header h1 {
+            font-size: 2rem;
+        }
+
+        .legal-nav ul {
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .sla-table {
+            font-size: 0.9rem;
+        }
+
+        .sla-table th, .sla-table td {
+            padding: 10px 12px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="legal-page">
+        <div class="legal-header">
+            <h1>Service Level Agreement</h1>
+            <p class="last-updated">Last Updated: February 2, 2026</p>
+        </div>
+
+        <div class="legal-nav">
+            <h4>Related Documents</h4>
+            <ul>
+                <li><a href="{{ url_for('terms_of_service') }}">Terms of Service</a></li>
+                <li><a href="{{ url_for('privacy_policy') }}">Privacy Policy</a></li>
+            </ul>
+        </div>
+
+        <div class="legal-content">
+            <p>This Service Level Agreement ("SLA") is part of the Terms of Service between ShopHosting.io ("Provider") and you ("Customer").</p>
+
+            <h2>1. Uptime Guarantee</h2>
+
+            <div class="highlight-box">
+                <div class="big-number">99.9%</div>
+                <p>Monthly Uptime Guarantee</p>
+            </div>
+
+            <h3>1.1 Commitment</h3>
+            <p>ShopHosting.io guarantees <strong>99.9% monthly uptime</strong> for all hosting services.</p>
+
+            <h3>1.2 Uptime Calculation</h3>
+            <p>Monthly Uptime Percentage = ((Total Minutes in Month - Downtime Minutes) / Total Minutes in Month) × 100</p>
+            <p><strong>99.9% uptime allows for approximately:</strong></p>
+            <ul>
+                <li>43.8 minutes of downtime per month</li>
+                <li>8.76 hours of downtime per year</li>
+            </ul>
+
+            <h3>1.3 What Counts as Downtime</h3>
+            <p>Downtime is measured as the total minutes during which the Customer's primary website is inaccessible due to Provider infrastructure failure, as verified by our monitoring systems.</p>
+
+            <h2>2. Service Credits</h2>
+            <p>If we fail to meet the 99.9% uptime guarantee, you are eligible for service credits as follows:</p>
+
+            <table class="sla-table">
+                <thead>
+                    <tr>
+                        <th>Monthly Uptime</th>
+                        <th>Service Credit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>99.0% - 99.9%</td>
+                        <td>10% of monthly fee</td>
+                    </tr>
+                    <tr>
+                        <td>95.0% - 99.0%</td>
+                        <td>25% of monthly fee</td>
+                    </tr>
+                    <tr>
+                        <td>90.0% - 95.0%</td>
+                        <td>50% of monthly fee</td>
+                    </tr>
+                    <tr>
+                        <td>Below 90.0%</td>
+                        <td>100% of monthly fee</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>2.1 Credit Request Process</h3>
+            <ol>
+                <li>Submit a support ticket within 30 days of the incident</li>
+                <li>Include the date, time, and duration of the outage</li>
+                <li>Credits are applied to future invoices (not refunded as cash)</li>
+            </ol>
+
+            <h3>2.2 Credit Limitations</h3>
+            <ul>
+                <li>Maximum credit per month: 100% of that month's fee</li>
+                <li>Credits do not carry over or accumulate</li>
+                <li>Credits cannot be transferred or exchanged for cash</li>
+            </ul>
+
+            <h2>3. Exclusions</h2>
+            <p>The uptime guarantee does NOT apply to downtime caused by:</p>
+
+            <h3>3.1 Scheduled Maintenance</h3>
+            <ul>
+                <li>Routine maintenance with at least 48 hours advance notice</li>
+                <li>Emergency security patches with reasonable notice</li>
+                <li>Maintenance windows: Tuesdays and Thursdays, 2:00 AM - 6:00 AM EST</li>
+            </ul>
+
+            <h3>3.2 Customer-Caused Issues</h3>
+            <ul>
+                <li>Errors in Customer code, plugins, or configurations</li>
+                <li>Customer-initiated changes that cause instability</li>
+                <li>Exceeding allocated resources (CPU, memory, storage, bandwidth)</li>
+                <li>DDoS attacks targeting Customer specifically</li>
+                <li>Account suspension due to Terms of Service violations</li>
+                <li>Account suspension due to non-payment</li>
+            </ul>
+
+            <h3>3.3 Force Majeure Events</h3>
+            <p>Circumstances beyond our reasonable control, including but not limited to:</p>
+            <ul>
+                <li><strong>Natural disasters:</strong> Earthquakes, floods, hurricanes, tornadoes, wildfires</li>
+                <li><strong>Civil unrest:</strong> War, terrorism, riots, government actions</li>
+                <li><strong>Infrastructure failures:</strong> Power grid outages, internet backbone failures, telecommunications disruptions beyond our network</li>
+                <li><strong>Pandemics:</strong> Disease outbreaks affecting operations</li>
+                <li><strong>Legal actions:</strong> Court orders, regulatory requirements</li>
+                <li><strong>Third-party failures:</strong> Upstream provider outages, DNS registry issues, certificate authority problems</li>
+            </ul>
+
+            <h3>3.4 Other Exclusions</h3>
+            <ul>
+                <li>Features labeled as "beta" or "experimental"</li>
+                <li>Free tier or trial accounts</li>
+                <li>Downtime during account migration at Customer's request</li>
+            </ul>
+
+            <h2>4. Support Response Times</h2>
+
+            <h3>4.1 Response Time Guarantee</h3>
+            <p>We guarantee an initial response within <strong>24 hours</strong> for all support tickets.</p>
+
+            <h3>4.2 Priority Levels</h3>
+            <table class="sla-table">
+                <thead>
+                    <tr>
+                        <th>Priority</th>
+                        <th>Description</th>
+                        <th>Target Response</th>
+                        <th>Target Resolution</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Critical</td>
+                        <td>Site completely down</td>
+                        <td>1 hour</td>
+                        <td>4 hours</td>
+                    </tr>
+                    <tr>
+                        <td>High</td>
+                        <td>Major functionality broken</td>
+                        <td>4 hours</td>
+                        <td>24 hours</td>
+                    </tr>
+                    <tr>
+                        <td>Medium</td>
+                        <td>Minor issues, degraded performance</td>
+                        <td>24 hours</td>
+                        <td>72 hours</td>
+                    </tr>
+                    <tr>
+                        <td>Low</td>
+                        <td>Questions, feature requests</td>
+                        <td>24 hours</td>
+                        <td>Best effort</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>4.3 Support Availability</h3>
+            <ul>
+                <li><strong>Ticket Support:</strong> 24/7/365</li>
+                <li><strong>Live Chat:</strong> Monday-Friday, 9 AM - 6 PM EST</li>
+                <li><strong>Phone Support:</strong> Available for Enterprise plans</li>
+            </ul>
+
+            <h2>5. Performance Standards</h2>
+
+            <h3>5.1 Server Performance</h3>
+            <p>We target the following performance benchmarks:</p>
+            <ul>
+                <li>Time to First Byte (TTFB): &lt; 200ms</li>
+                <li>Server response time: &lt; 500ms for uncached requests</li>
+                <li>Backup completion: Within 4 hours of scheduled time</li>
+            </ul>
+
+            <h3>5.2 Resource Allocation</h3>
+            <p>Each account receives guaranteed minimum resources as specified in your plan. Resources are not oversold beyond sustainable limits.</p>
+
+            <h2>6. Monitoring and Reporting</h2>
+
+            <h3>6.1 Uptime Monitoring</h3>
+            <p>We monitor all services at 1-minute intervals from multiple global locations.</p>
+
+            <h3>6.2 Status Page</h3>
+            <p>Real-time service status is available at: <a href="https://status.shophosting.io">status.shophosting.io</a></p>
+
+            <h3>6.3 Incident Communication</h3>
+            <p>During outages, we will:</p>
+            <ul>
+                <li>Update the status page within 15 minutes</li>
+                <li>Send email notifications for extended outages (&gt;30 minutes)</li>
+                <li>Provide post-incident reports for major outages</li>
+            </ul>
+
+            <h2>7. Data Protection</h2>
+
+            <h3>7.1 Backup Schedule</h3>
+            <ul>
+                <li><strong>Daily backups:</strong> Retained for 30 days</li>
+                <li><strong>Database backups:</strong> Every 6 hours</li>
+                <li><strong>Off-site storage:</strong> All backups replicated to geographically separate location</li>
+            </ul>
+
+            <h3>7.2 Recovery Time Objective (RTO)</h3>
+            <p>In the event of data loss, we target restoration within 4 hours.</p>
+
+            <h3>7.3 Recovery Point Objective (RPO)</h3>
+            <p>Maximum data loss in a disaster scenario: 6 hours (time since last backup)</p>
+
+            <h2>8. Security</h2>
+
+            <h3>8.1 Security Measures</h3>
+            <ul>
+                <li>DDoS protection on all plans</li>
+                <li>Web Application Firewall (WAF)</li>
+                <li>SSL/TLS certificates included</li>
+                <li>Regular security patching within 24 hours of critical vulnerabilities</li>
+            </ul>
+
+            <h3>8.2 Security Incident Response</h3>
+            <p>We will notify affected customers within 72 hours of discovering a security breach that impacts their data.</p>
+
+            <h2>9. SLA Modifications</h2>
+            <p>We may modify this SLA with 30 days notice. Changes will not apply retroactively to existing incidents.</p>
+
+            <h2>10. Contact</h2>
+            <p>To report an outage or request SLA credits:</p>
+            <ul>
+                <li><strong>Support Portal:</strong> <a href="https://support.shophosting.io">support.shophosting.io</a></li>
+                <li><strong>Email:</strong> <a href="mailto:support@shophosting.io">support@shophosting.io</a></li>
+                <li><strong>Status Page:</strong> <a href="https://status.shophosting.io">status.shophosting.io</a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

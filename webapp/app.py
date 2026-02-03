@@ -640,6 +640,27 @@ def about():
     return render_template('about.html')
 
 
+@app.route('/terms')
+@cache_unless_authenticated(timeout=3600)  # 1 hour cache (rarely changes)
+def terms_of_service():
+    """Terms of Service page"""
+    return render_template('legal/terms.html')
+
+
+@app.route('/sla')
+@cache_unless_authenticated(timeout=3600)  # 1 hour cache (rarely changes)
+def service_level_agreement():
+    """Service Level Agreement page"""
+    return render_template('legal/sla.html')
+
+
+@app.route('/privacy')
+@cache_unless_authenticated(timeout=3600)  # 1 hour cache (rarely changes)
+def privacy_policy():
+    """Privacy Policy page"""
+    return render_template('legal/privacy.html')
+
+
 @app.route('/contact')
 @cache_unless_authenticated(timeout=300)  # 5 min cache
 def contact():

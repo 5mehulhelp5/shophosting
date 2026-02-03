@@ -84,3 +84,6 @@ docs/plans/*-marketing-*.md
 # Generated reports
 webapp/admin/marketing/reports/*.pdf
 sudoers.d/
+
+# OpsBot - Personal ops tool (separate product)
+opsbot/
