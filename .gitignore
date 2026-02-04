@@ -88,3 +88,7 @@ sudoers.d/
 # OpsBot - Personal ops tool (separate product)
 opsbot/
 docs/plans/*-opsbot-*.md
+
+# Security dashboard (internal tooling, not for public repo)
+security/
+docs/plans/*-security-*.md
