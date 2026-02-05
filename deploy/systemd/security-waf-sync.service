@@ -1,0 +1,13 @@
+[Unit]
+Description=ShopHosting WAF Log Sync
+After=network.target
+
+[Service]
+Type=oneshot
+User=agileweb
+WorkingDirectory=/opt/shophosting/security
+ExecStart=/usr/bin/python3 -c "import sys; sys.path.insert(0, '.'); from scanners.waf import WAFLogParser; WAFLogParser().sync_to_db()"
+TimeoutSec=30
+
+[Install]
+WantedBy=multi-user.target

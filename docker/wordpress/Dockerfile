@@ -1,7 +1,9 @@
 FROM wordpress:latest
 
 # Install mysql client tools (for mysqladmin ping) + curl + unzip (for plugin downloads)
+# apt-get upgrade pulls in latest security patches for all installed packages
 RUN apt-get update \
+  && apt-get upgrade -y \
   && apt-get install -y --no-install-recommends default-mysql-client ca-certificates curl unzip \
   && rm -rf /var/lib/apt/lists/*
 

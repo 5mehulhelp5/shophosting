@@ -1,0 +1,25 @@
+[Unit]
+Description=ShopHosting.io Performance Worker
+After=network.target mysql.service redis.service shophosting-webapp.service
+Wants=mysql.service redis.service
+
+[Service]
+Type=simple
+User=agileweb
+Group=agileweb
+WorkingDirectory=/opt/shophosting
+Environment="PYTHONPATH=/opt/shophosting"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/shophosting/webapp/venv/bin/python3 -u /opt/shophosting/provisioning/performance_worker.py
+Restart=always
+RestartSec=30
+
+# Logging
+StandardOutput=append:/opt/shophosting/logs/performance_worker.log
+StandardError=append:/opt/shophosting/logs/performance_worker.log
+
+# Security hardening
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

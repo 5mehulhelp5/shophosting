@@ -1,7 +1,9 @@
 FROM shinsenter/magento:latest
 
 # Install mysql client tools (for mysqladmin ping) - curl is already installed
+# apt-get upgrade pulls in latest security patches for all installed packages
 RUN apt-get update \
+  && apt-get upgrade -y \
   && apt-get install -y --no-install-recommends default-mysql-client \
   && rm -rf /var/lib/apt/lists/*
 
