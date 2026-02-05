@@ -1331,8 +1331,9 @@ def dashboard_domains():
         flash('Customer account not found.', 'error')
         return redirect(url_for('dashboard'))
 
-    # Server IP for DNS configuration
-    server_ip = os.environ.get('SERVER_IP', '147.135.8.170')
+    # Server IP for DNS configuration - use customer's assigned server
+    server = customer.get_server()
+    server_ip = server.ip_address if server else os.environ.get('SERVER_IP', '147.135.8.170')
 
     # Get Cloudflare connection status and DNS records
     cloudflare_connection = CloudflareConnection.get_by_customer_id(customer.id)
@@ -1366,7 +1367,8 @@ def api_domain_health():
         return jsonify({'error': 'No domain configured'}), 400
 
     domain = customer.domain
-    server_ip = os.environ.get('SERVER_IP', '147.135.8.170')
+    server = customer.get_server()
+    server_ip = server.ip_address if server else os.environ.get('SERVER_IP', '147.135.8.170')
     result = {
         'domain': domain,
         'dns': {'status': 'unknown', 'resolved_ip': None, 'points_to_us': False},
@@ -1374,12 +1376,30 @@ def api_domain_health():
         'http': {'status': 'unknown'}
     }
 
+    # Cloudflare IPv4 ranges (https://www.cloudflare.com/ips-v4)
+    import ipaddress
+    cloudflare_ranges = [
+        '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22',
+        '103.31.4.0/22', '141.101.64.0/18', '108.162.192.0/18',
+        '190.93.240.0/20', '188.114.96.0/20', '197.234.240.0/22',
+        '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+        '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+    ]
+
     # Check DNS resolution
     try:
         resolved_ip = socket.gethostbyname(domain)
         result['dns']['resolved_ip'] = resolved_ip
-        result['dns']['points_to_us'] = (resolved_ip == server_ip)
-        result['dns']['status'] = 'ok' if resolved_ip == server_ip else 'misconfigured'
+        if resolved_ip == server_ip:
+            result['dns']['points_to_us'] = True
+            result['dns']['status'] = 'ok'
+        elif any(ipaddress.ip_address(resolved_ip) in ipaddress.ip_network(cidr) for cidr in cloudflare_ranges):
+            result['dns']['points_to_us'] = True
+            result['dns']['proxied'] = True
+            result['dns']['status'] = 'ok'
+        else:
+            result['dns']['points_to_us'] = False
+            result['dns']['status'] = 'misconfigured'
     except socket.gaierror:
         result['dns']['status'] = 'not_found'
     except Exception as e:

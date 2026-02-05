@@ -1189,6 +1189,21 @@
                     <span class="copy-text">Copy IP</span>
                 </button>
             </div>
+
+            <div class="dns-record">
+                <div class="dns-info">
+                    <span class="dns-type">A Record (www)</span>
+                    <span class="dns-name">www.{{ customer.domain }}</span>
+                    <span class="dns-value">Points to: {{ server_ip }}</span>
+                </div>
+                <button class="copy-btn" data-copy="{{ server_ip }}">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <span class="copy-text">Copy IP</span>
+                </button>
+            </div>
         </div>
 
         {% else %}
@@ -1228,6 +1243,16 @@
                     <strong>DNS Setup Required</strong>
                     Point your domain to our servers by adding these DNS records at your domain registrar (GoDaddy, Namecheap, Cloudflare, etc.)
                 </div>
+            </div>
+
+            <div style="margin-bottom: 16px; padding: 16px; background: var(--bg-surface); border-radius: var(--radius-md); font-size: 0.875rem; color: var(--text-secondary); line-height: 1.6;">
+                <strong style="color: var(--text-primary); display: block; margin-bottom: 8px;">How to set up DNS:</strong>
+                <ol style="margin: 0; padding-left: 20px;">
+                    <li>Log in to your domain registrar (where you bought your domain)</li>
+                    <li>Find the DNS settings or DNS management page</li>
+                    <li>Add the two A records shown below pointing to <strong style="color: var(--accent-blue);">{{ server_ip }}</strong></li>
+                    <li>Save your changes &mdash; DNS propagation can take up to 24 hours</li>
+                </ol>
             </div>
 
             <div class="dns-record">
@@ -1520,7 +1545,9 @@ async function checkDomainHealth() {
         const data = await response.json();
 
         // Update DNS status
-        if (data.dns.status === 'ok') {
+        if (data.dns.status === 'ok' && data.dns.proxied) {
+            updateHealthItem('dns-health', 'success', 'Proxied through Cloudflare', 'Cloudflare IP: ' + data.dns.resolved_ip);
+        } else if (data.dns.status === 'ok') {
             updateHealthItem('dns-health', 'success', 'Properly configured', 'Resolves to ' + data.dns.resolved_ip);
         } else if (data.dns.status === 'misconfigured') {
             updateHealthItem('dns-health', 'warning', 'Misconfigured', 'Points to ' + data.dns.resolved_ip + ' instead of our server');

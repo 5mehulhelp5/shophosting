@@ -126,7 +126,7 @@ class EmailService:
             logger.error(f"Failed to send email to {to_email}: {e}")
             return False
 
-    def send_welcome_email(self, to_email: str, domain: str, platform: str, admin_user: str, admin_password: str) -> bool:
+    def send_welcome_email(self, to_email: str, domain: str, platform: str, admin_user: str, admin_password: str, server_ip: str = '147.135.8.170') -> bool:
         """Send welcome email when store is provisioned"""
         platform_title = platform.title()
         admin_url = f"https://{domain}/wp-admin" if platform == 'woocommerce' else f"https://{domain}/admin"
@@ -184,6 +184,45 @@ class EmailService:
                 </tr>
             </table>
 
+            <!-- DNS Setup card -->
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #111114; border-radius: 10px; margin-bottom: 24px;">
+                <tr>
+                    <td style="padding: 24px;">
+                        <p style="margin: 0 0 16px 0; color: #71717a; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Connect Your Domain</p>
+                        <p style="margin: 0 0 16px 0; color: #a1a1aa; font-size: 14px; line-height: 1.5;">
+                            Point your domain to your store by adding these DNS records at your domain registrar:
+                        </p>
+
+                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                                <td style="padding: 8px 0; color: #71717a; font-size: 14px; width: 80px;">A Record</td>
+                                <td style="padding: 8px 0; color: #f4f4f6; font-size: 14px;">
+                                    <span style="color: #a1a1aa;">{domain}</span> &rarr; <span style="font-family: monospace; color: #0088ff;">{server_ip}</span>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px 0; color: #71717a; font-size: 14px;">A Record</td>
+                                <td style="padding: 8px 0; color: #f4f4f6; font-size: 14px;">
+                                    <span style="color: #a1a1aa;">www.{domain}</span> &rarr; <span style="font-family: monospace; color: #0088ff;">{server_ip}</span>
+                                </td>
+                            </tr>
+                        </table>
+
+                        <p style="margin: 16px 0 16px 0; color: #a1a1aa; font-size: 13px; line-height: 1.5;">
+                            We recommend <a href="https://dash.cloudflare.com/sign-up" style="color: #0088ff; text-decoration: none;">Cloudflare</a> (free) for DNS management and DDoS protection.
+                        </p>
+
+                        <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                            <tr>
+                                <td style="border-radius: 8px; border: 1px solid #0088ff;">
+                                    <a href="https://shophosting.io/dashboard/domains" style="display: inline-block; padding: 10px 20px; color: #0088ff; text-decoration: none; font-weight: 600; font-size: 13px;">Manage DNS in Dashboard</a>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+
             <!-- Getting Started section -->
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: rgba(0, 136, 255, 0.1); border-radius: 10px; border: 1px solid rgba(0, 136, 255, 0.2); margin-bottom: 24px;">
                 <tr>
@@ -220,6 +259,17 @@ Username: {admin_user}
 Password: {admin_password}
 
 Important: Please change your password after your first login.
+
+Connect Your Domain:
+Point your domain to your store by adding these DNS records:
+
+  A Record: {domain} -> {server_ip}
+  A Record: www.{domain} -> {server_ip}
+
+We recommend Cloudflare (free) for DNS management and DDoS protection:
+https://dash.cloudflare.com/sign-up
+
+Manage DNS in your dashboard: https://shophosting.io/dashboard/domains
 
 Getting Started:
 New to {platform_title}? Check out our setup guide for step-by-step instructions:
