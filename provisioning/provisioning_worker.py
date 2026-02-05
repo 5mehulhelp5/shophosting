@@ -1013,12 +1013,31 @@ bin/magento setup:install \\
             except Exception as check_err:
                 logger.warning(f"Could not check customer status: {check_err}")
 
+            # Look up the customer's assigned server IP for DNS instructions
+            server_ip = os.environ.get('SERVER_IP', '147.135.8.170')
+            try:
+                conn_ip = self.get_db_connection()
+                cursor_ip = conn_ip.cursor()
+                cursor_ip.execute("""
+                    SELECT s.ip_address FROM servers s
+                    JOIN customers c ON c.server_id = s.id
+                    WHERE c.id = %s
+                """, (config['customer_id'],))
+                row_ip = cursor_ip.fetchone()
+                if row_ip and row_ip[0]:
+                    server_ip = row_ip[0]
+                cursor_ip.close()
+                conn_ip.close()
+            except Exception:
+                pass
+
             result = email_service.send_welcome_email(
                 to_email=config['email'],
                 domain=config['domain'],
                 platform=config['platform'],
                 admin_user=config['admin_user'],
-                admin_password=config['admin_password']
+                admin_password=config['admin_password'],
+                server_ip=server_ip
             )
 
             if result:
