@@ -1,0 +1,16 @@
+[Unit]
+Description=ShopHosting Marketing Queue Processor
+After=network.target mysql.service
+
+[Service]
+Type=oneshot
+User=agileweb
+Group=agileweb
+WorkingDirectory=/opt/shophosting/webapp
+Environment="PATH=/opt/shophosting/webapp/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/opt/shophosting/webapp/venv/bin/python /opt/shophosting/webapp/admin/marketing/process_queue.py
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

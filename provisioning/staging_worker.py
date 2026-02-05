@@ -455,8 +455,9 @@ class StagingWorker:
         root /var/www/html;
     }}
 
+    # Proxy through ModSecurity WAF for security inspection
     location / {{
-        proxy_pass http://localhost:{staging.web_port};
+        proxy_pass http://localhost:8880;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -474,6 +475,9 @@ class StagingWorker:
     error_log /var/log/nginx/{config_name}-error.log;
 }}
 """
+
+        # Register domain in WAF internal backend for correct routing
+        self._register_waf_backend(staging.staging_domain, staging.web_port)
 
         import tempfile
         with tempfile.NamedTemporaryFile(mode='w', suffix='.conf', delete=False) as f:
@@ -512,6 +516,63 @@ class StagingWorker:
             logger.warning(f"SSL setup failed: {ssl_error}")
 
         logger.info(f"Nginx configured for {staging.staging_domain}")
+
+    def _register_waf_backend(self, domain, port):
+        """Add a server block to the WAF internal backend config.
+
+        The WAF forwards inspected traffic to nginx on port 8081, which then
+        routes to the correct customer container based on the Host header.
+        """
+        backend_conf = Path("/etc/nginx/sites-available/waf-backend.conf")
+        block = f"""
+server {{
+    listen 8081;
+    server_name {domain};
+
+    location / {{
+        proxy_pass http://localhost:{port};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 600;
+        proxy_send_timeout 600;
+        proxy_read_timeout 600;
+        send_timeout 600;
+        client_max_body_size 100M;
+    }}
+}}
+"""
+        try:
+            result = subprocess.run(
+                ['sudo', 'cat', str(backend_conf)],
+                capture_output=True, text=True
+            )
+            existing = result.stdout if result.returncode == 0 else ''
+
+            if f'server_name {domain};' in existing:
+                logger.info(f"WAF backend already has entry for {domain}")
+                return
+
+            marker = '# Default: return 502'
+            if marker in existing:
+                new_config = existing.replace(marker, block + marker)
+            else:
+                new_config = existing + block
+
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.conf', delete=False) as f:
+                f.write(new_config)
+                temp_file = f.name
+
+            subprocess.run(
+                ['sudo', 'cp', temp_file, str(backend_conf)],
+                capture_output=True, text=True, check=True
+            )
+            os.unlink(temp_file)
+            logger.info(f"Registered WAF backend for {domain} -> port {port}")
+        except Exception as e:
+            logger.warning(f"Failed to register WAF backend for {domain}: {e}")
 
     # =========================================================================
     # Push to Production

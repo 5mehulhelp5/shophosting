@@ -73,6 +73,7 @@
                             <a href="{{ url_for('admin.customer_detail', customer_id=customer.id) }}" class="btn btn-secondary btn-sm">View</a>
                             {% if customer.status == 'active' %}
                             <form method="POST" action="{{ url_for('admin.customer_suspend', customer_id=customer.id) }}" style="display: inline;" onsubmit="return confirm('Suspend {{ customer.email }}? This will stop their containers.');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <input type="hidden" name="reason" value="Manual suspension">
                                 <button type="submit" class="btn btn-warning btn-sm" title="Suspend">
                                     <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>
@@ -80,6 +81,7 @@
                             </form>
                             {% elif customer.status == 'suspended' %}
                             <form method="POST" action="{{ url_for('admin.customer_reactivate', customer_id=customer.id) }}" style="display: inline;" onsubmit="return confirm('Reactivate {{ customer.email }}? This will start their containers.');">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-success btn-sm" title="Reactivate">
                                     <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"></polygon></svg>
                                 </button>

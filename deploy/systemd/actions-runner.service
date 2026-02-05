@@ -1,0 +1,14 @@
+[Unit]
+Description=GitHub Actions Runner for shophosting
+After=network.target
+
+[Service]
+Type=simple
+User=agileweb
+WorkingDirectory=/home/agileweb/actions-runner
+ExecStart=/home/agileweb/actions-runner/run.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

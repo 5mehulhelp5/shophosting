@@ -347,17 +347,18 @@ def check_session_timeout():
                     f"SESSION_TIMEOUT: user={current_user.id} email={current_user.email} "
                     f"idle_time={idle_time:.0f}s IP={request.remote_addr}"
                 )
-                # Preserve admin session data before clearing
-                admin_session_data = {
+                # Preserve admin session data and CSRF token before clearing
+                preserved_data = {
                     'admin_user_id': session.get('admin_user_id'),
                     'admin_user_name': session.get('admin_user_name'),
                     'admin_user_role': session.get('admin_user_role'),
                     'admin_last_activity': session.get('admin_last_activity'),
+                    'csrf_token': session.get('csrf_token'),
                 }
                 logout_user()
                 session.clear()
-                # Restore admin session if it existed
-                for key, value in admin_session_data.items():
+                # Restore preserved session data
+                for key, value in preserved_data.items():
                     if value is not None:
                         session[key] = value
                 flash('Your session has expired due to inactivity. Please log in again.', 'info')
@@ -4059,6 +4060,16 @@ def internal_error(error):
 @app.errorhandler(CSRFError)
 def handle_csrf_error(error):
     """Handle CSRF token errors gracefully"""
+    # Log detailed CSRF failure info for debugging
+    security_logger.warning(
+        f"CSRF_ERROR: reason='{error.description}' "
+        f"endpoint={request.endpoint} method={request.method} "
+        f"url={request.url} "
+        f"has_form_token={'csrf_token' in request.form} "
+        f"has_session_token={'csrf_token' in session} "
+        f"referrer={request.referrer} "
+        f"IP={request.remote_addr}"
+    )
     flash('Your session has expired. Please try again.', 'info')
     # Redirect back to the referring page, or home if no referrer
     referrer = request.referrer

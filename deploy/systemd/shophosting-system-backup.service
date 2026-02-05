@@ -1,0 +1,9 @@
+[Unit]
+Description=ShopHosting System Backup
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/shophosting/scripts/system-backup.sh
+StandardOutput=journal
+StandardError=journal

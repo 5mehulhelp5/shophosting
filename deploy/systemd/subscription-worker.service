@@ -1,0 +1,22 @@
+[Unit]
+Description=ShopHosting Subscription Grace Period Worker
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=agileweb
+Group=agileweb
+WorkingDirectory=/opt/shophosting/webapp
+Environment="PATH=/opt/shophosting/webapp/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/opt/shophosting/.env
+ExecStart=/opt/shophosting/webapp/venv/bin/python3 /opt/shophosting/scripts/subscription_worker.py --daemon --interval 15
+Restart=always
+RestartSec=60
+
+# Logging
+StandardOutput=append:/opt/shophosting/logs/subscription_worker.log
+StandardError=append:/opt/shophosting/logs/subscription_worker.log
+
+[Install]
+WantedBy=multi-user.target

@@ -347,9 +347,12 @@ class ProvisioningWorker:
                 (customer_path / "themes").mkdir(exist_ok=True)
                 (customer_path / "mysql").mkdir(exist_ok=True)
                 (customer_path / "redis").mkdir(exist_ok=True)
-                # Set ownership for www-data (UID 33)
+                # Set ownership for www-data (UID 33) — requires sudo since worker runs as agileweb
                 for subdir in ['uploads', 'plugins', 'themes']:
-                    os.chown(customer_path / subdir, 33, 33)
+                    subprocess.run(
+                        ['sudo', 'chown', 'www-data:www-data', str(customer_path / subdir)],
+                        check=True, capture_output=True, timeout=10
+                    )
             else:
                 # Magento: selective volume directories
                 (customer_path / "volumes").mkdir(exist_ok=True)
@@ -359,9 +362,12 @@ class ProvisioningWorker:
                 (customer_path / "volumes" / "generated").mkdir(exist_ok=True)
                 (customer_path / "volumes" / "static").mkdir(exist_ok=True)
                 (customer_path / "volumes" / "app-etc").mkdir(exist_ok=True)
-                # Set ownership for www-data (UID 33)
+                # Set ownership for www-data (UID 33) — requires sudo since worker runs as agileweb
                 for subdir in ['media', 'var', 'generated', 'static', 'app-etc']:
-                    os.chown(customer_path / "volumes" / subdir, 33, 33)
+                    subprocess.run(
+                        ['sudo', 'chown', 'www-data:www-data', str(customer_path / "volumes" / subdir)],
+                        check=True, capture_output=True, timeout=10
+                    )
 
             # Create Varnish directory and config for Magento
             if platform == 'magento':
@@ -533,14 +539,15 @@ class ProvisioningWorker:
     
     def configure_reverse_proxy(self, domain, customer_id, port):
         """Configure Nginx reverse proxy for customer domain"""
-        
+
         # Nginx sites-available directory
         nginx_config_path = Path("/etc/nginx/sites-available")
         nginx_enabled_path = Path("/etc/nginx/sites-enabled")
-        
+
         config_file = nginx_config_path / f"customer-{customer_id}.conf"
         enabled_link = nginx_enabled_path / f"customer-{customer_id}.conf"
-        
+
+        # Route through ModSecurity WAF (port 8880) instead of directly to container
         nginx_config = f"""server {{
     listen 80;
     listen [::]:80;
@@ -551,9 +558,9 @@ class ProvisioningWorker:
         root /var/www/html;
     }}
 
-    # Temporary: proxy to container before SSL is set up
+    # Proxy through ModSecurity WAF for security inspection
     location / {{
-        proxy_pass http://localhost:{port};
+        proxy_pass http://localhost:8880;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -574,6 +581,9 @@ class ProvisioningWorker:
     error_log /var/log/nginx/customer-{customer_id}-error.log;
 }}
 """
+        # Register this domain in the WAF internal backend so the WAF can
+        # forward clean traffic to the correct customer container.
+        self._register_waf_backend(domain, port)
 
 # HTTPS configuration (will be uncommented after SSL cert is obtained)
 # server {{
@@ -589,7 +599,7 @@ class ProvisioningWorker:
 #     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
 #     
 #     location / {{
-#         proxy_pass http://localhost:{port};
+#         proxy_pass http://localhost:8880;
 #         proxy_set_header Host $host;
 #         proxy_set_header X-Real-IP $remote_addr;
 #         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -688,6 +698,68 @@ class ProvisioningWorker:
             logger.error(f"Failed to configure Nginx: {e}")
             raise ProvisioningError(f"Nginx configuration failed: {e}")
     
+    def _register_waf_backend(self, domain, port):
+        """Add a server block to the WAF internal backend config.
+
+        The WAF forwards inspected traffic to nginx on port 8081, which then
+        routes to the correct customer container based on the Host header.
+        This method appends a new server block for the given domain/port.
+        """
+        backend_conf = Path("/etc/nginx/sites-available/waf-backend.conf")
+        block = f"""
+server {{
+    listen 8081;
+    server_name {domain};
+
+    location / {{
+        proxy_pass http://localhost:{port};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 600;
+        proxy_send_timeout 600;
+        proxy_read_timeout 600;
+        send_timeout 600;
+        client_max_body_size 100M;
+    }}
+}}
+"""
+        try:
+            import tempfile
+            # Read existing config, insert new block before the default_server block
+            result = subprocess.run(
+                ['sudo', 'cat', str(backend_conf)],
+                capture_output=True, text=True
+            )
+            existing = result.stdout if result.returncode == 0 else ''
+
+            # Skip if domain is already registered
+            if f'server_name {domain};' in existing:
+                logger.info(f"WAF backend already has entry for {domain}")
+                return
+
+            # Insert before the default_server block (or append)
+            marker = '# Default: return 502'
+            if marker in existing:
+                new_config = existing.replace(marker, block + marker)
+            else:
+                new_config = existing + block
+
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.conf', delete=False) as f:
+                f.write(new_config)
+                temp_file = f.name
+
+            subprocess.run(
+                ['sudo', 'cp', temp_file, str(backend_conf)],
+                capture_output=True, text=True, check=True
+            )
+            os.unlink(temp_file)
+            logger.info(f"Registered WAF backend for {domain} -> port {port}")
+        except Exception as e:
+            logger.warning(f"Failed to register WAF backend for {domain}: {e}")
+            logger.warning("Customer site will work but WAF routing may need manual setup.")
+
     def install_application(self, customer_path, config):
         """Verify application container is running"""
 
