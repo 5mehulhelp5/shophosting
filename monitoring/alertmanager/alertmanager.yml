@@ -3,14 +3,9 @@
 
 global:
   # SMTP settings for email notifications
-  smtp_smarthost: '${SMTP_HOST:-localhost:587}'
-  smtp_from: '${SMTP_FROM:-alerts@shophosting.io}'
-  smtp_auth_username: '${SMTP_USERNAME:-}'
-  smtp_auth_password: '${SMTP_PASSWORD:-}'
-  smtp_require_tls: true
-
-  # PagerDuty integration
-  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alerts@shophosting.io'
+  smtp_require_tls: false
 
   # Default timeout for notifications
   resolve_timeout: 5m
@@ -34,17 +29,10 @@ route:
 
   # Child routes for severity-based routing
   routes:
-    # Critical alerts go to PagerDuty AND email
-    - match:
-        severity: critical
-      receiver: 'pagerduty-critical'
-      continue: true  # Also send to next matching route
-
     - match:
         severity: critical
       receiver: 'email-notifications'
 
-    # Warning alerts only go to email
     - match:
         severity: warning
       receiver: 'email-notifications'
@@ -53,7 +41,7 @@ route:
 receivers:
   - name: 'email-notifications'
     email_configs:
-      - to: '${ALERT_EMAIL:-ops@shophosting.io}'
+      - to: 'ops@shophosting.io'
         send_resolved: true
         headers:
           Subject: '[ShopHosting {{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
@@ -72,15 +60,16 @@ receivers:
           <hr>
           {{ end }}
 
-  - name: 'pagerduty-critical'
-    pagerduty_configs:
-      - routing_key: '${PAGERDUTY_ROUTING_KEY:-}'
-        severity: critical
-        description: '{{ .CommonAnnotations.summary }}'
-        details:
-          alertname: '{{ .GroupLabels.alertname }}'
-          customer_id: '{{ .GroupLabels.customer_id }}'
-          description: '{{ .CommonAnnotations.description }}'
+  # PagerDuty receiver — uncomment and add routing_key when ready
+  # - name: 'pagerduty-critical'
+  #   pagerduty_configs:
+  #     - routing_key: 'YOUR_PAGERDUTY_ROUTING_KEY'
+  #       severity: critical
+  #       description: '{{ .CommonAnnotations.summary }}'
+  #       details:
+  #         alertname: '{{ .GroupLabels.alertname }}'
+  #         customer_id: '{{ .GroupLabels.customer_id }}'
+  #         description: '{{ .CommonAnnotations.description }}'
 
 # Inhibition rules - suppress less severe alerts when critical is firing
 inhibit_rules:
